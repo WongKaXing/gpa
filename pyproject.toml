@@ -1,0 +1,18 @@
+[project]
+name = "gitpush"
+version = "0.1.0"
+description = "Sync dotfiles to Git repos and push to multiple remotes"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+gpa = "gitpush.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.0",
+]
