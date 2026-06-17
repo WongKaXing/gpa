@@ -57,7 +57,9 @@ def sync_files(repo: RepoConfig, config_dir: Path) -> SyncResult:
                 result.skipped.append(f"{entry.source} (已排除)")
                 continue
             dst.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dst / src.name)
+            target = dst / src.name
+            target.unlink(missing_ok=True)
+            shutil.copy2(src, target)
             result.copied.append(entry.source)
 
         elif src.is_dir():
@@ -70,6 +72,7 @@ def sync_files(repo: RepoConfig, config_dir: Path) -> SyncResult:
                 rel = item.relative_to(src)
                 target = dst / rel
                 target.parent.mkdir(parents=True, exist_ok=True)
+                target.unlink(missing_ok=True)
                 shutil.copy2(item, target)
                 result.copied.append(str(item))
 
