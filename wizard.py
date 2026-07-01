@@ -6,6 +6,8 @@ import re as _re
 import subprocess
 from pathlib import Path
 
+from gitpush.utils import atomic_write
+
 
 def _setup_path_completion() -> None:
     """为 input() 启用 Tab 路径自动补全（不区分大小写）。"""
@@ -238,9 +240,6 @@ def _find_duplicate(config_path: Path, new_name: str, new_path: str) -> tuple[st
 
 def _handle_duplicate(config_path: Path, name: str, path: str) -> str | None:
     """重复仓库提示，返回用户选择: 'push' / 'manage' / None(取消)。"""
-    from gitpush.config import parse_config
-    config = parse_config(config_path)
-
     print(f"\n  ⚠ 仓库已存在!")
     print(f"  名称: {name}")
     print(f"  路径: {path}")
@@ -259,10 +258,15 @@ def _handle_duplicate(config_path: Path, name: str, path: str) -> str | None:
 
 
 def _list_repo_names(config_path: Path) -> list[str]:
-    """从 TOML 文件中提取所有仓库名称。"""
-    import re
-    text = config_path.read_text()
-    return re.findall(r'^\[\[repos\]\]\nname = "(.+)"', text, re.MULTILINE)
+    """从配置文件中提取所有仓库名称。"""
+    from gitpush.config import parse_config
+    if not config_path.exists():
+        return []
+    try:
+        config = parse_config(config_path)
+    except SystemExit:
+        return []
+    return [repo.name for repo in config.repos if repo.name]
 
 
 def _delete_repo_from_toml(text: str, repo_name: str) -> str:
@@ -278,7 +282,7 @@ def _delete_repo_from_toml(text: str, repo_name: str) -> str:
 
         # 检测 [[repos]] 段头（排除 [[repos.files]]）
         if stripped.startswith("[[repos]]") and not stripped.startswith("[[repos.files]]"):
-            if i + 1 < len(lines) and f'name = "{repo_name}"' in lines[i + 1]:
+            if i + 1 < len(lines) and lines[i + 1].strip() == f'name = "{repo_name}"':
                 skipping = True
                 i += 1
                 continue
@@ -310,7 +314,7 @@ def delete_repo_from_config(config_path: str | Path, repo_name: str) -> bool:
         print(f"  未找到仓库: {repo_name}")
         return False
     new_text = _delete_repo_from_toml(text, repo_name)
-    config_path.write_text(new_text)
+    atomic_write(config_path, new_text)
     print(f"  已删除仓库: {repo_name}")
     return True
 
@@ -319,32 +323,36 @@ def reconfigure_repo_in_config(config_path: str | Path, repo_name: str) -> None:
     """删除旧配置，然后交互式重建同一个仓库。"""
     _setup_path_completion()
     config_path = Path(config_path)
-    text = config_path.read_text()
+    original_text = config_path.read_text()
 
-    if f'name = "{repo_name}"' not in text:
+    if f'name = "{repo_name}"' not in original_text:
         print(f"  未找到仓库: {repo_name}")
         return
 
-    text = _delete_repo_from_toml(text, repo_name)
+    text = _delete_repo_from_toml(original_text, repo_name)
 
     print(f"\n重新配置仓库: {repo_name}")
     result = _build_repo_section(1)
     if not result:
-        print("已取消，仓库配置未更改（旧配置已删除，请手动恢复）。")
+        # 恢复原配置
+        atomic_write(config_path, original_text)
+        print("已取消，配置未更改。")
         return
 
     section_lines, _, _ = result
     if not text.endswith("\n"):
         text += "\n"
-    config_path.write_text(text + "\n".join(section_lines) + "\n")
+    atomic_write(config_path, text + "\n".join(section_lines) + "\n")
     print(f"\n 仓库 {repo_name} 已更新")
 
 
 # ── 主入口 ────────────────────────────────────────────────────
 
 
-def run_wizard(config_path: str | Path = "gitpush.toml") -> None:
-    """运行交互式配置并写入 gitpush.toml。"""
+def run_wizard(config_path: str | Path | None = None) -> None:
+    """运行交互式配置并写入 ~/.gitpush.toml。"""
+    if config_path is None:
+        config_path = Path.home() / ".gitpush.toml"
     _setup_path_completion()
     config_path = Path(config_path)
 
@@ -392,7 +400,7 @@ def run_wizard(config_path: str | Path = "gitpush.toml") -> None:
         if again.lower() not in ("y", "yes"):
             break
 
-    config_path.write_text("\n".join(lines) + "\n")
+    atomic_write(config_path, "\n".join(lines) + "\n")
     print(f"\n 配置已写入 {config_path.resolve()}")
 
     from gitpush.state import save_config_path
@@ -434,6 +442,6 @@ def append_repo_to_config(config_path: str | Path) -> str:
     if not existing.endswith("\n"):
         existing += "\n"
 
-    config_path.write_text(existing + "\n".join(section_lines) + "\n")
+    atomic_write(config_path, existing + "\n".join(section_lines) + "\n")
     print(f"\n 仓库已追加到 {config_path.resolve()}")
     return "added"

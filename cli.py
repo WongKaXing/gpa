@@ -11,7 +11,6 @@ from gitpush.state import load_config_path, save_config_path
 from gitpush.wizard import (
     run_wizard, append_repo_to_config,
     delete_repo_from_config, reconfigure_repo_in_config,
-    _list_repo_names,
 )
 
 _SEP = "─" * 48
@@ -37,7 +36,7 @@ def _print_banner() -> None:
     print("    gpa -c <路径>    指定配置文件直接执行推送")
     print()
     print("  配置文件:")
-    print(f"    默认位置: ~/gitpush.toml")
+    print(f"    默认位置: ~/.gitpush.toml")
     print(f"    状态文件: ~/.config/gitpush/state.json")
     print(f"    可直接编辑 TOML 文件来修改仓库配置")
     print()
@@ -90,7 +89,7 @@ def _print_repo_detail(config: Config, repo_name: str) -> None:
 def _manage_repo_menu(config_path: Path) -> bool:
     """管理仓库子菜单：选择仓库 → 查看详情 → 删除或重配。返回 True 表示配置已变更。"""
     config = parse_config(config_path)
-    names = _list_repo_names(config_path)
+    names = [repo.name for repo in config.repos if repo.name]
     if not names:
         print("  没有已配置的仓库。")
         return False
@@ -259,7 +258,7 @@ def _main() -> None:
 
     # 显式 init — 运行向导，然后进入交互菜单
     if args.action == "init":
-        config_path = Path(args.config) if args.config else Path("gitpush.toml")
+        config_path = Path(args.config) if args.config else Path.home() / ".gitpush.toml"
         run_wizard(config_path)
         _interactive_menu(config_path)
         return
@@ -294,7 +293,7 @@ def _main() -> None:
         print("  未找到已保存的配置。")
         print()
         print("  运行以下命令开始配置:")
-        print("    gpa init          创建默认配置 (~/gitpush.toml)")
+        print("    gpa init          创建默认配置 (~/.gitpush.toml)")
         print("    gpa -c <路径>     指定已有配置文件")
         sys.exit(0)
 

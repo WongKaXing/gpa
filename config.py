@@ -34,23 +34,41 @@ def parse_config(config_path: str | Path) -> Config:
 
     Merges [defaults] into each repo: repo-level keys override defaults.
     """
-    with open(config_path, "rb") as f:
-        raw = tomllib.load(f)
+    try:
+        with open(config_path, "rb") as f:
+            raw = tomllib.load(f)
+    except FileNotFoundError:
+        raise SystemExit(f"配置文件不存在: {config_path}")
+    except PermissionError:
+        raise SystemExit(f"无权限读取配置文件: {config_path}")
+    except tomllib.TOMLDecodeError as e:
+        raise SystemExit(f"配置文件格式错误: {e}")
 
     defaults = raw.get("defaults", {})
     default_template = defaults.get("commit_template", "update {date}")
     default_exclude = defaults.get("exclude", [".DS_Store", "__pycache__", "*.pyc"])
 
     repos: list[RepoConfig] = []
-    for repo_raw in raw.get("repos", []):
-        files = [
-            FileEntry(source=f["source"], dest=f["dest"])
-            for f in repo_raw.get("files", [])
-        ]
+    for i, repo_raw in enumerate(raw.get("repos", []), 1):
+        name = repo_raw.get("name")
+        path = repo_raw.get("path")
+        if not name:
+            raise SystemExit(f"仓库配置 #{i} 缺少 'name' 字段")
+        if not path:
+            raise SystemExit(f"仓库配置 '{name}' 缺少 'path' 字段")
+        files = []
+        for j, f in enumerate(repo_raw.get("files", []), 1):
+            source = f.get("source")
+            dest = f.get("dest")
+            if not source:
+                raise SystemExit(f"仓库 '{name}' 的文件配置 #{j} 缺少 'source' 字段")
+            if not dest:
+                raise SystemExit(f"仓库 '{name}' 的文件配置 #{j} 缺少 'dest' 字段")
+            files.append(FileEntry(source=source, dest=dest))
         repos.append(
             RepoConfig(
-                name=repo_raw["name"],
-                path=repo_raw["path"],
+                name=name,
+                path=path,
                 remotes=repo_raw.get("remotes", []),
                 files=files,
                 commit_template=repo_raw.get("commit_template", default_template),
