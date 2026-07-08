@@ -102,3 +102,18 @@ def run_all(config: Config, config_path: str | Path, verbose: bool = False) -> N
                     break
 
         errored = print_summary(results)
+
+
+def run_single(repo: RepoConfig, config_path: str | Path) -> list[str]:
+    """运行单个仓库的同步和推送。
+
+    Args:
+        repo: 要推送的仓库配置。
+        config_path: 配置文件路径（用于确定配置目录）。
+
+    Returns:
+        出错的仓库名列表（空列表表示成功）。
+    """
+    config_dir = Path(config_path).resolve().parent
+    result = _process_repo(repo, config_dir)
+    return print_summary([result])

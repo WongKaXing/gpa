@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from gitpush.config import parse_config, Config
-from gitpush.orchestrator import run_all
+from gitpush.orchestrator import run_all, run_single
 from gitpush.state import load_config_path, save_config_path
 from gitpush.wizard import (
     run_wizard, append_repo_to_config,
@@ -15,6 +15,50 @@ from gitpush.wizard import (
 
 _SEP = "─" * 48
 _THIN = "╌" * 48
+
+
+def _get_config_path() -> Path | None:
+    """获取配置文件路径，如果不存在则打印错误信息并返回 None。"""
+    saved_path = load_config_path()
+    if saved_path is None:
+        print("未找到已保存的配置。")
+        print("运行 'gpa init' 创建配置，或使用 -c 参数指定配置文件。")
+        return None
+    config_path = Path(saved_path)
+    if not config_path.exists():
+        print(f"已保存的配置文件不存在: {config_path}")
+        print("运行 'gpa init' 重新创建配置。")
+        return None
+    return config_path
+
+
+def _resolve_config(
+    config_arg: str | None,
+    save: bool = True,
+) -> tuple[Path, Config] | None:
+    """解析配置文件路径并加载配置。
+
+    Args:
+        config_arg: -c 参数指定的配置文件路径，可能为 None。
+        save: 是否保存配置路径到状态文件（默认 True）。
+
+    Returns:
+        (config_path, config) 元组，或 None 表示失败。
+    """
+    if config_arg:
+        config_path = Path(config_arg)
+        if not config_path.exists():
+            print(f"未找到配置文件: {config_path}")
+            print("运行 'gpa init' 创建配置，或检查路径是否正确。")
+            return None
+        if save:
+            save_config_path(config_path)
+    else:
+        config_path = _get_config_path()
+        if config_path is None:
+            return None
+    config = parse_config(config_path)
+    return config_path, config
 
 
 def _clear_screen() -> None:
@@ -84,6 +128,71 @@ def _print_repo_detail(config: Config, repo_name: str) -> None:
             print(f"  ╰" + "─" * 46)
             return
     print(f"  未找到仓库: {repo_name}")
+
+
+def _list_repos(config: Config) -> None:
+    """列出所有已配置的仓库。"""
+    print("\n已配置的仓库：")
+    if not config.repos:
+        print("  （无）")
+        return
+    for i, repo in enumerate(config.repos, 1):
+        print(f"  {i}. {repo.name}")
+        print(f"     {repo.path}")
+        remote_str = ", ".join(repo.remotes) if repo.remotes else "(无远程)"
+        print(f"     远程: {remote_str}")
+    print()
+
+
+def _push_single_repo(
+    config: Config,
+    config_path: Path,
+    repo_name: str | None = None,
+) -> bool:
+    """推送单个仓库。
+
+    Args:
+        config: 解析后的配置对象。
+        config_path: 配置文件路径。
+        repo_name: 仓库名称（可选）。如果为 None，显示交互式选择。
+
+    Returns:
+        是否成功推送。
+    """
+    if not config.repos:
+        print("  没有已配置的仓库，请先添加仓库。")
+        return False
+
+    if repo_name:
+        # CLI 模式：按名称查找
+        target = next((r for r in config.repos if r.name == repo_name), None)
+        if not target:
+            print(f"未找到仓库 '{repo_name}'，运行 `gpa list` 查看可用仓库")
+            return False
+        run_single(target, config_path)
+        return True
+
+    # 交互模式：显示列表选择
+    print("\n推送指定仓库:\n")
+    for i, repo in enumerate(config.repos, 1):
+        remote_str = ", ".join(repo.remotes) if repo.remotes else "(无远程)"
+        print(f"  {i}. {repo.name}")
+        print(f"     {repo.path}")
+        print(f"     远程: {remote_str}")
+        print()
+    print("  0. 返回")
+
+    sel = _input_simple("\n  输入仓库编号: ")
+    try:
+        idx = int(sel) - 1
+        if idx < 0 or idx >= len(config.repos):
+            return False
+    except (ValueError, IndexError):
+        return False
+
+    target = config.repos[idx]
+    run_single(target, config_path)
+    return True
 
 
 def _manage_repo_menu(config_path: Path) -> bool:
@@ -162,10 +271,11 @@ def _interactive_menu(config_path: Path) -> None:
         print(_SEP)
         print(" 操作:")
         print("   1. 执行 Git Push (同步并推送所有仓库)")
-        print("   2. 添加新的 Git 仓库")
-        print("   3. 管理已有仓库 (删除 / 重新配置)")
-        print("   4. 重新运行配置向导 (覆盖当前配置)")
-        print("   5. 退出")
+        print("   2. 推送指定仓库 (选择单个仓库推送)")
+        print("   3. 添加新的 Git 仓库")
+        print("   4. 管理已有仓库 (删除 / 重新配置)")
+        print("   5. 重新运行配置向导 (覆盖当前配置)")
+        print("   6. 退出")
         print(_SEP)
 
         choice = _safe_input(" 输入选项 [1]: ") or "1"
@@ -175,6 +285,13 @@ def _interactive_menu(config_path: Path) -> None:
             run_all(config, config_path, verbose=False)
             break
         elif choice == "2":
+            _clear_screen()
+            if _push_single_repo(config, config_path):
+                break
+            # 如果用户选择返回，重新显示配置摘要
+            config = parse_config(config_path)
+            _print_config_summary(config, config_path)
+        elif choice == "3":
             _clear_screen()
             result = append_repo_to_config(config_path)
             if result == "duplicate:push":
@@ -188,21 +305,21 @@ def _interactive_menu(config_path: Path) -> None:
                 continue
             config = parse_config(config_path)
             _print_config_summary(config, config_path)
-        elif choice == "3":
+        elif choice == "4":
             changed = _manage_repo_menu(config_path)
             if changed:
                 config = parse_config(config_path)
                 _print_config_summary(config, config_path)
-        elif choice == "4":
+        elif choice == "5":
             _clear_screen()
             run_wizard(config_path)
             config = parse_config(config_path)
             _print_config_summary(config, config_path)
-        elif choice == "5":
+        elif choice == "6":
             print("  退出。")
             break
         else:
-            print("  无效选项，请输入 1-5。")
+            print("  无效选项，请输入 1-6。")
 
 
 def main() -> None:
@@ -227,7 +344,13 @@ def _main() -> None:
         "action",
         nargs="?",
         default=None,
-        help="输入 'init' 运行配置向导",
+        help="init: 配置向导, list: 列出仓库, push: 推送指定仓库",
+    )
+    parser.add_argument(
+        "repo_name",
+        nargs="?",
+        default=None,
+        help="仓库名称（用于 'push' 操作）",
     )
     parser.add_argument(
         "--dry-run",
@@ -248,7 +371,7 @@ def _main() -> None:
     args = parser.parse_args()
 
     has_explicit_action = (
-        args.action == "init"
+        args.action in ("init", "list", "push")
         or args.config is not None
     )
 
@@ -261,6 +384,28 @@ def _main() -> None:
         config_path = Path(args.config) if args.config else Path.home() / ".gitpush.toml"
         run_wizard(config_path)
         _interactive_menu(config_path)
+        return
+
+    # 显式 list — 列出所有已配置的仓库
+    if args.action == "list":
+        result = _resolve_config(args.config, save=False)
+        if result is None:
+            return
+        config_path, config = result
+        _list_repos(config)
+        return
+
+    # 显式 push — 推送指定仓库
+    if args.action == "push":
+        if not args.repo_name:
+            print("请指定仓库名称，例如: gpa push <name>")
+            return
+        result = _resolve_config(args.config)
+        if result is None:
+            return
+        config_path, config = result
+        if not _push_single_repo(config, config_path, args.repo_name):
+            sys.exit(1)
         return
 
     # 显式指定配置文件
