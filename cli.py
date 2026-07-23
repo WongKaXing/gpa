@@ -18,18 +18,23 @@ _THIN = "╌" * 48
 
 
 def _get_config_path() -> Path | None:
-    """获取配置文件路径，如果不存在则打印错误信息并返回 None。"""
+    """获取配置文件路径。先查 state 快取，失效则回退到 ~/.gitpush.toml 并自动注册。"""
     saved_path = load_config_path()
-    if saved_path is None:
-        print("未找到已保存的配置。")
-        print("运行 'gpa init' 创建配置，或使用 -c 参数指定配置文件。")
-        return None
-    config_path = Path(saved_path)
-    if not config_path.exists():
-        print(f"已保存的配置文件不存在: {config_path}")
-        print("运行 'gpa init' 重新创建配置。")
-        return None
-    return config_path
+    if saved_path is not None:
+        config_path = Path(saved_path)
+        if config_path.exists():
+            return config_path
+        # saved path is stale — inform user, then try default
+        print(f"注意: 已保存的配置文件已不存在 ({config_path})，正在检查默认路径...")
+    # 回退：检查默认路径
+    default_config = Path.home() / ".gitpush.toml"
+    if default_config.exists():
+        save_config_path(default_config)
+        return default_config
+    # 两者都没有
+    print("未找到已保存的配置。")
+    print("运行 'gpa init' 创建配置，或使用 -c 参数指定配置文件。")
+    return None
 
 
 def _resolve_config(
@@ -432,20 +437,8 @@ def _main() -> None:
     # ── 无参数 → 打印命令说明，然后检测配置 ──
     _print_banner()
 
-    saved_path = load_config_path()
-
-    if saved_path is None:
-        print("  未找到已保存的配置。")
-        print()
-        print("  运行以下命令开始配置:")
-        print("    gpa init          创建默认配置 (~/.gitpush.toml)")
-        print("    gpa -c <路径>     指定已有配置文件")
-        sys.exit(0)
-
-    config_path = Path(saved_path)
-    if not config_path.exists():
-        print(f"  已保存的配置文件不存在: {config_path}")
-        print("  运行 'gpa init' 重新创建配置。")
+    config_path = _get_config_path()
+    if config_path is None:
         sys.exit(0)
 
     _interactive_menu(config_path)

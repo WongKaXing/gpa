@@ -1,0 +1,2 @@
+[console_scripts]
+gpa = gitpush.cli:main

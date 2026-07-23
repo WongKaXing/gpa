@@ -1,0 +1,10 @@
+0000000000000000000000000000000000000000 764d26233f7fa6a8ce4667feaa1be0ef0420287c WongKaXing <WongKaXing@2231609004@qq.com> 1783518370 +0800	commit (initial): feat: 添加 run_single() 函数支持单仓库推送
+764d26233f7fa6a8ce4667feaa1be0ef0420287c 7bd504292fc02b1874952f09e0137396d8176f2b WongKaXing <WongKaXing@2231609004@qq.com> 1783518416 +0800	commit: feat: 添加 _list_repos() 函数列出所有仓库
+7bd504292fc02b1874952f09e0137396d8176f2b 6c9178ea21fe8565707d36ac3d9fd7f80fb46e93 WongKaXing <WongKaXing@2231609004@qq.com> 1783518449 +0800	commit: fix: 改进 _list_repos() 函数和测试质量
+6c9178ea21fe8565707d36ac3d9fd7f80fb46e93 1b74a4a1003ec3f21dfe0c003d5e726730c3432c WongKaXing <WongKaXing@2231609004@qq.com> 1783518464 +0800	commit: feat: 添加 _push_single_repo() 函数支持单仓库推送
+1b74a4a1003ec3f21dfe0c003d5e726730c3432c dceced06da5a86767115ed67e3845bd5589f0957 WongKaXing <WongKaXing@2231609004@qq.com> 1783518483 +0800	commit: test: 补充 _push_single_repo() 交互式模式边界测试
+dceced06da5a86767115ed67e3845bd5589f0957 f7a8d090dc3051849049eeb6495249e5339e7742 WongKaXing <WongKaXing@2231609004@qq.com> 1783518502 +0800	commit: feat: 修改交互菜单添加推送指定仓库选项
+f7a8d090dc3051849049eeb6495249e5339e7742 68a09801e76e3cd4b79a9729aff5f1a14cfcdc9c WongKaXing <WongKaXing@2231609004@qq.com> 1783518551 +0800	commit: feat: 添加 list 和 push CLI 子命令
+68a09801e76e3cd4b79a9729aff5f1a14cfcdc9c 8ef2729054c8c80cc63e43901f60c55f9d0640b4 WongKaXing <WongKaXing@2231609004@qq.com> 1783518587 +0800	commit: refactor: 重构 CLI 子命令实现，提取 _resolve_config() 辅助函数，补充测试覆盖
+8ef2729054c8c80cc63e43901f60c55f9d0640b4 085ff1f6a7382280072d51b2104c7463537fd0b4 WongKaXing <WongKaXing@2231609004@qq.com> 1783518596 +0800	commit: docs: 更新 README 添加 list 和 push 命令说明
+085ff1f6a7382280072d51b2104c7463537fd0b4 713eb61a5152cb1b36ec66cc4d326ecac436f1ea WongKaXing <WongKaXing@2231609004@qq.com> 1783518915 +0800	commit: chore: bump version to 0.1.2
