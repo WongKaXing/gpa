@@ -27,13 +27,12 @@ def test_list_repos(capsys) -> None:
 
     captured = capsys.readouterr()
     assert "已配置 2 个仓库" in captured.out
-    # 默认按名称字母排序：dotfiles 在前
+    # 默认按名称字母排序：dotfiles 在前；不显示路径
     assert "[1]  dotfiles" in captured.out
-    assert "~/Documents/Git/dotfiles" in captured.out
     assert "github" in captured.out
     assert "[2]  nvim" in captured.out
-    assert "~/Documents/Git/nvim" in captured.out
     assert "gitee, github" in captured.out
+    assert "~/Documents/Git/" not in captured.out
 
 
 def test_list_repos_empty(capsys) -> None:
@@ -63,8 +62,8 @@ def test_list_repos_no_remotes(capsys) -> None:
     captured = capsys.readouterr()
     assert "已配置 1 个仓库" in captured.out
     assert "[1]  local-repo" in captured.out
-    assert "~/Documents/Git/local" in captured.out
     assert "(无远程)" in captured.out
+    assert "~/Documents/Git/local" not in captured.out
 
 
 def test_push_single_repo_by_name(capsys) -> None:

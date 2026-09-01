@@ -83,13 +83,17 @@ def _process_repo(repo: RepoConfig, config_dir: Path) -> RepoResult:
 
 
 def run_all(config: Config, config_path: str | Path, verbose: bool = False) -> None:
-    """运行配置中的所有仓库，打印进度和汇总，处理重试。"""
+    """运行配置中的所有仓库，打印进度和汇总，处理重试。
+
+    仓库按名称字母顺序处理（与显示顺序一致）。
+    """
     config_dir = Path(config_path).resolve().parent
     results: list[RepoResult] = []
 
     print("开始同步...")
 
-    for repo in config.repos:
+    repos = sorted(config.repos, key=lambda r: r.name.lower())
+    for repo in repos:
         r = _process_repo(repo, config_dir)
         results.append(r)
 
@@ -98,7 +102,7 @@ def run_all(config: Config, config_path: str | Path, verbose: bool = False) -> N
     while errored:
         if not ask_retry():
             break
-        for repo in config.repos:
+        for repo in repos:
             if repo.name not in errored:
                 continue
             r = _process_repo(repo, config_dir)

@@ -128,23 +128,21 @@ def _sorted_repos(config: Config) -> list[RepoConfig]:
 
 
 def _print_repo_table(config: Config) -> None:
-    """打印仓库列表（首页摘要与 gpa list 共用格式）。
+    """打印仓库列表（首页摘要与 gpa list 共用格式，不显示路径）。
 
     ── 已配置 N 个仓库 ──
-      [1]  name   path   remotes
+      [1]  name   remotes
     """
     repos = _sorted_repos(config)
     print(f"  {color('── 已配置 ' + str(len(repos)) + ' 个仓库 ──', _BOLD)}")
     if not repos:
         return
     max_name = max(display_width(r.name) for r in repos)
-    max_path = max(display_width(str(r.path)) for r in repos)
     for i, repo in enumerate(repos, 1):
         idx = f"[{i}]".ljust(4)  # [1]..[10] 的 ] 与名称列对齐
         name_col = pad_to(repo.name, max_name)
-        path_col = pad_to(str(repo.path), max_path)
         remote_str = ", ".join(repo.remotes) if repo.remotes else "(无远程)"
-        print(f"  {idx} {name_col}  {path_col}  {color(remote_str, _CYAN)}")
+        print(f"  {idx} {name_col}  {color(remote_str, _CYAN)}")
 
 
 def _print_config_summary(config: Config, config_path: Path) -> None:
@@ -218,15 +216,15 @@ def _push_single_repo(
         run_single(target, config_path)
         return True
 
-    # 交互模式：显示列表选择（按名称字母顺序）
+    # 交互模式：显示列表选择（按名称字母顺序，不显示路径）
     repos = _sorted_repos(config)
+    max_name = max(display_width(r.name) for r in repos)
     print()
     print(_box_top("推送指定仓库"))
     for i, repo in enumerate(repos, 1):
         remote_str = ", ".join(repo.remotes) if repo.remotes else "(无远程)"
-        print(_box_row(f"[{i}]".ljust(4) + repo.name))
-        print(_box_row(f"      {repo.path}"))
-        print(_box_row(f"      远程: {remote_str}"))
+        name_col = pad_to(repo.name, max_name)
+        print(_box_row(f"[{i}]".ljust(4) + " " + name_col + "  " + remote_str))
     print(_box_row("─" * (_BOX_W - 2)))
     print(_box_row("0. 返回（q）"))
     print(_box_bottom())
@@ -259,7 +257,7 @@ def _manage_repo_menu(config_path: Path) -> bool:
         print()
         print(_box_top("管理已有仓库"))
         for i, name in enumerate(names, 1):
-            print(_box_row(f"[{i}]".ljust(4) + name))
+            print(_box_row(f"[{i}]".ljust(4) + " " + name))
         print(_box_row("─" * (_BOX_W - 2)))
         print(_box_row("0. 返回（q）"))
         print(_box_bottom())
@@ -503,7 +501,7 @@ def _main() -> None:
 
         if args.dry_run:
             print(f"预览模式 — 将处理 {len(config.repos)} 个仓库:")
-            for repo in config.repos:
+            for repo in _sorted_repos(config):
                 print(f"  [{repo.name}] {repo.path} → 远程: {repo.remotes}")
                 for f in repo.files:
                     print(f"    复制: {f.source} → {f.dest}")
