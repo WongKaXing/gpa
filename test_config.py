@@ -95,3 +95,43 @@ def test_default_exclude():
     cfg = Config(repos=[])
     assert ".DS_Store" in cfg.exclude
     assert "__pycache__" in cfg.exclude
+
+
+def test_parse_sync_dir():
+    """测试 sync_dir 整目录同步字段解析（兼容旧 files 语法）。"""
+    toml = """
+[defaults]
+exclude = [".DS_Store"]
+
+[[repos]]
+name = "nvim"
+path = "~/Documents/Git/nvim/"
+remotes = ["gitee", "github"]
+sync_dir = "~/.config/nvim"
+
+[[repos]]
+name = "kitty"
+path = "~/Documents/Git/kitty/"
+remotes = ["github"]
+exclude = [".DS_Store", "*.conf.bak"]
+
+[[repos.files]]
+source = "~/.config/kitty/kitty.conf"
+dest = "."
+"""
+    with tempfile.NamedTemporaryFile(mode="wb", suffix=".toml", delete=False) as f:
+        f.write(toml.encode())
+        tmp = Path(f.name)
+
+    try:
+        cfg = parse_config(tmp)
+        # sync_dir 仓库
+        assert cfg.repos[0].sync_dir == "~/.config/nvim"
+        assert cfg.repos[0].files == []
+        assert cfg.repos[0].exclude == [".DS_Store"]
+        # sync_dir + files 并存（旧语法兼容）
+        assert cfg.repos[1].sync_dir is None
+        assert cfg.repos[1].files[0].source == "~/.config/kitty/kitty.conf"
+        assert cfg.repos[1].exclude == [".DS_Store", "*.conf.bak"]
+    finally:
+        tmp.unlink()

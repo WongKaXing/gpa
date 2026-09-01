@@ -20,6 +20,7 @@ class RepoConfig:
     files: list[FileEntry] = field(default_factory=list)
     commit_template: str | None = None
     exclude: list[str] | None = None
+    sync_dir: str | None = None  # 同步整个目录（配合 exclude 排除），与 files 二选一
 
 
 @dataclass
@@ -73,6 +74,7 @@ def parse_config(config_path: str | Path) -> Config:
                 files=files,
                 commit_template=repo_raw.get("commit_template", default_template),
                 exclude=repo_raw.get("exclude", default_exclude),
+                sync_dir=repo_raw.get("sync_dir"),
             )
         )
 

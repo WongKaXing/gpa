@@ -109,3 +109,53 @@ def test_sync_nested_directory():
             assert len(result.copied) == 2
             assert (Path(repo_dir) / "top.txt").exists()
             assert (Path(repo_dir) / "sub" / "deep" / "deep.txt").exists()
+
+
+def test_sync_dir_whole_directory(tmp_path):
+    """测试 sync_dir 同步整个目录并排除文件。"""
+    from gitpush.config import RepoConfig
+    from gitpush.filesync import sync_files
+
+    src = tmp_path / "config"
+    (src / "sub").mkdir(parents=True)
+    (src / "a.conf").write_text("a")
+    (src / "sub" / "b.conf").write_text("b")
+    (src / "secret.tmp").write_text("s")
+
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    repo = RepoConfig(
+        name="test",
+        path=str(repo_path),
+        remotes=[],
+        sync_dir=str(src),
+        exclude=[".DS_Store", "*.tmp"],
+    )
+
+    result = sync_files(repo, tmp_path)
+
+    assert (repo_path / "a.conf").exists()
+    assert (repo_path / "sub" / "b.conf").exists()
+    assert not (repo_path / "secret.tmp").exists()
+    assert len(result.copied) == 2
+    assert any("secret.tmp" in s for s in result.skipped)
+
+
+def test_sync_dir_missing(tmp_path):
+    """测试 sync_dir 指向不存在的目录时跳过并记录。"""
+    from gitpush.config import RepoConfig
+    from gitpush.filesync import sync_files
+
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    repo = RepoConfig(
+        name="test",
+        path=str(repo_path),
+        remotes=[],
+        sync_dir=str(tmp_path / "nope"),
+    )
+
+    result = sync_files(repo, tmp_path)
+
+    assert result.copied == []
+    assert any("未找到" in s for s in result.skipped)

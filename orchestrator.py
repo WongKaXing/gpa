@@ -7,6 +7,7 @@ from gitpush.config import Config, RepoConfig
 from gitpush.filesync import sync_files
 from gitpush.gitops import git_sync
 from gitpush.reporter import RepoResult, print_summary, ask_retry
+from gitpush.settings import order_repos
 from gitpush.utils import color
 
 
@@ -82,17 +83,22 @@ def _process_repo(repo: RepoConfig, config_dir: Path) -> RepoResult:
     return result
 
 
-def run_all(config: Config, config_path: str | Path, verbose: bool = False) -> None:
+def run_all(
+    config: Config,
+    config_path: str | Path,
+    verbose: bool = False,
+    sort_order: str = "asc",
+) -> None:
     """运行配置中的所有仓库，打印进度和汇总，处理重试。
 
-    仓库按名称字母顺序处理（与显示顺序一致）。
+    仓库处理顺序遵循设置的 sort_order（asc/desc/config）。
     """
     config_dir = Path(config_path).resolve().parent
     results: list[RepoResult] = []
 
     print("开始同步...")
 
-    repos = sorted(config.repos, key=lambda r: r.name.lower())
+    repos = order_repos(config.repos, sort_order)
     for repo in repos:
         r = _process_repo(repo, config_dir)
         results.append(r)

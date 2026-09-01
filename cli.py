@@ -8,8 +8,9 @@ from pathlib import Path
 from gitpush import __version__ as _VERSION
 from gitpush.config import parse_config, Config, RepoConfig
 from gitpush.orchestrator import run_all, run_single
+from gitpush.settings import Settings, ensure_settings, load_settings, order_repos
 from gitpush.state import load_config_path, save_config_path
-from gitpush.utils import center, color, display_width, pad_to
+from gitpush.utils import center, color, display_width, pad_to, set_color_enabled
 from gitpush.wizard import (
     run_wizard, append_repo_to_config,
     delete_repo_from_config, reconfigure_repo_in_config,
@@ -21,6 +22,9 @@ _YELLOW = "33"
 _RED = "31"
 _BOLD = "1"
 _BOX_W = 50
+
+# 运行期设置（main() 入口从 settings.toml 加载）
+_SETTINGS = Settings()
 
 
 def _box_row(text: str) -> str:
@@ -105,10 +109,12 @@ def _print_banner() -> None:
     print("    gpa init         首次运行，创建配置文件")
     print("    gpa -a           直接推送所有仓库（自动使用已保存的配置）")
     print("    gpa -c <路径>    指定配置文件直接执行推送")
+    print("    gpa push <名称/序号>  推送指定仓库")
     print()
     print("  配置文件:")
     print(f"    默认位置: ~/.gitpush.toml")
     print(f"    状态文件: ~/.config/gitpush/state.json")
+    print(f"    设置文件: ~/.config/gitpush/settings.toml (排序/用法/颜色/默认动作)")
     print(f"    可直接编辑 TOML 文件来修改仓库配置")
     print()
     print("  可选参数:")
@@ -122,9 +128,20 @@ def _print_banner() -> None:
     print()
 
 
-def _sorted_repos(config: Config) -> list[RepoConfig]:
-    """按仓库名称字母顺序（不区分大小写）排序的仓库列表，作为默认显示顺序。"""
-    return sorted(config.repos, key=lambda r: r.name.lower())
+def _ordered_repos(config: Config) -> list[RepoConfig]:
+    """按设置文件 sort_order 排序的仓库列表（asc/desc/config）。"""
+    return order_repos(config.repos, _SETTINGS.sort_order)
+
+
+def _find_repo(repos: list[RepoConfig], key: str) -> RepoConfig | None:
+    """按序号（1-based）或自定义仓库名（不区分大小写）查找仓库。"""
+    if key.isdigit():
+        idx = int(key) - 1
+        if 0 <= idx < len(repos):
+            return repos[idx]
+        return None
+    k = key.lower()
+    return next((r for r in repos if r.name.lower() == k), None)
 
 
 def _print_repo_table(config: Config) -> None:
@@ -133,7 +150,7 @@ def _print_repo_table(config: Config) -> None:
     ── 已配置 N 个仓库 ──
       [1]  name   remotes
     """
-    repos = _sorted_repos(config)
+    repos = _ordered_repos(config)
     print(f"  {color('── 已配置 ' + str(len(repos)) + ' 个仓库 ──', _BOLD)}")
     if not repos:
         return
@@ -169,12 +186,14 @@ def _print_repo_detail(config: Config, repo_name: str) -> None:
             print(_box_row(f"路径: {repo.path}"))
             remote_str = ", ".join(repo.remotes) if repo.remotes else "(无)"
             print(_box_row(f"远程: {remote_str}"))
+            if repo.sync_dir:
+                print(_box_row(f"同步目录: {repo.sync_dir}"))
             if repo.files:
                 print(_box_row(f"同步文件 ({len(repo.files)}):"))
                 for f in repo.files:
                     print(_box_row(f"  {f.source}"))
                     print(_box_row(f"  → {f.dest}"))
-            else:
+            if not repo.sync_dir and not repo.files:
                 print(_box_row("同步文件: (无)"))
             print(_box_bottom())
             return
@@ -208,16 +227,16 @@ def _push_single_repo(
         return False
 
     if repo_name:
-        # CLI 模式：按名称查找
-        target = next((r for r in config.repos if r.name == repo_name), None)
+        # CLI 模式：支持序号（1-based）或自定义仓库名（不区分大小写）
+        target = _find_repo(order_repos(config.repos, _SETTINGS.sort_order), repo_name)
         if not target:
             print(f"未找到仓库 '{repo_name}'，运行 `gpa list` 查看可用仓库")
             return False
         run_single(target, config_path)
         return True
 
-    # 交互模式：显示列表选择（按名称字母顺序，不显示路径）
-    repos = _sorted_repos(config)
+    # 交互模式：显示列表选择（按设置排序，不显示路径）
+    repos = _ordered_repos(config)
     max_name = max(display_width(r.name) for r in repos)
     print()
     print(_box_top("推送指定仓库"))
@@ -230,17 +249,13 @@ def _push_single_repo(
     print(_box_bottom())
     print()
 
-    sel = _input_simple(" 输入仓库编号: ")
+    sel = _input_simple(" 输入仓库编号或名称: ")
     if _is_quit(sel):
         return False
-    try:
-        idx = int(sel) - 1
-        if idx < 0 or idx >= len(repos):
-            return False
-    except (ValueError, IndexError):
+    target = _find_repo(repos, sel)
+    if target is None:
+        print("  无效选择。")
         return False
-
-    target = repos[idx]
     run_single(target, config_path)
     return True
 
@@ -249,7 +264,7 @@ def _manage_repo_menu(config_path: Path) -> bool:
     """管理仓库子菜单：选择仓库 → 查看详情 → 删除或重配。返回 True 表示配置已变更。"""
     while True:
         config = parse_config(config_path)
-        names = [repo.name for repo in _sorted_repos(config) if repo.name]
+        names = [repo.name for repo in _ordered_repos(config) if repo.name]
         if not names:
             print("  没有已配置的仓库。")
             return False
@@ -359,7 +374,7 @@ def _interactive_menu(config_path: Path) -> None:
         if choice == "1":
             _clear_screen()
             print()
-            run_all(config, config_path, verbose=False)
+            run_all(config, config_path, verbose=False, sort_order=_SETTINGS.sort_order)
             break
         elif choice == "2":
             _clear_screen()
@@ -371,7 +386,7 @@ def _interactive_menu(config_path: Path) -> None:
             _clear_screen()
             result = append_repo_to_config(config_path)
             if result == "duplicate:push":
-                run_all(config, config_path, verbose=False)
+                run_all(config, config_path, verbose=False, sort_order=_SETTINGS.sort_order)
                 break
             elif result == "duplicate:manage":
                 if _manage_repo_menu(config_path):
@@ -394,6 +409,11 @@ def _interactive_menu(config_path: Path) -> None:
 
 
 def main() -> None:
+    global _SETTINGS
+    # 加载 gpa 设置（首次运行自动生成带注释的设置模板）
+    _SETTINGS = load_settings()
+    ensure_settings()
+    set_color_enabled(_SETTINGS.color)
     try:
         _main()
     except KeyboardInterrupt:
@@ -501,20 +521,29 @@ def _main() -> None:
 
         if args.dry_run:
             print(f"预览模式 — 将处理 {len(config.repos)} 个仓库:")
-            for repo in _sorted_repos(config):
+            for repo in _ordered_repos(config):
                 print(f"  [{repo.name}] {repo.path} → 远程: {repo.remotes}")
                 for f in repo.files:
                     print(f"    复制: {f.source} → {f.dest}")
             return
 
-        run_all(config, config_path, verbose=args.verbose)
+        run_all(config, config_path, verbose=args.verbose, sort_order=_SETTINGS.sort_order)
         return
 
-    # ── 无参数 → 打印命令说明，然后检测配置 ──
-    _print_banner()
+    # ── 无参数 → 按设置决定是否打印用法说明，然后检测配置 ──
+    if _SETTINGS.show_usage:
+        _print_banner()
+    else:
+        print()
 
     config_path = _get_config_path()
     if config_path is None:
         sys.exit(0)
+
+    # 设置 default_action = "push" 时，无参数直接推送全部仓库
+    if _SETTINGS.default_action == "push":
+        config = parse_config(config_path)
+        run_all(config, config_path, verbose=False, sort_order=_SETTINGS.sort_order)
+        return
 
     _interactive_menu(config_path)

@@ -1,6 +1,6 @@
 [project]
 name = "gitpush"
-version = "0.1.4"
+version = "0.2.0"
 description = "Sync dotfiles to Git repos and push to multiple remotes"
 readme = "README.md"
 requires-python = ">=3.12"

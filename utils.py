@@ -45,6 +45,17 @@ def center(text: str, width: int) -> str:
     return " " * left + text + " " * (pad - left)
 
 
+_COLOR_ENABLED = True
+
+
+def set_color_enabled(enabled: bool) -> None:
+    """全局开关 ANSI 颜色（依据 gpa 设置文件 color 字段）。"""
+    global _COLOR_ENABLED
+    _COLOR_ENABLED = enabled
+
+
 def color(text: str, code: str) -> str:
-    """ANSI 着色：32 绿 / 31 红 / 33 黄 / 36 青 / 1 加粗。"""
+    """ANSI 着色：32 绿 / 31 红 / 33 黄 / 36 青 / 1 加粗。关闭时返回原文。"""
+    if not _COLOR_ENABLED:
+        return text
     return f"\033[{code}m{text}\033[0m"

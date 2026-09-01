@@ -633,3 +633,145 @@ def test_repo_table_sorted_alphabetically(capsys) -> None:
     # 排序后顺序: alpha → Beta → zsh
     assert captured.out.index("alpha") < captured.out.index("Beta")
     assert captured.out.index("Beta") < captured.out.index("zsh")
+
+
+def test_push_single_repo_by_index(capsys) -> None:
+    """测试 gpa push 支持序号（按排序后 1-based 序号）。"""
+    from gitpush.cli import main
+
+    config_path = Path("/tmp/config.toml")
+    config_path.write_text("""
+[defaults]
+commit_template = "update {date}"
+
+[[repos]]
+name = "nvim"
+path = "~/Documents/Git/nvim"
+remotes = ["gitee", "github"]
+
+[[repos]]
+name = "alpha"
+path = "~/Documents/Git/alpha"
+remotes = ["github"]
+""")
+
+    with patch("sys.argv", ["gpa", "push", "1", "-c", str(config_path)]), \
+         patch("gitpush.cli.run_single") as mock_run:
+        main()
+        # 排序后 [1] = alpha
+        mock_run.assert_called_once()
+        assert mock_run.call_args[0][0].name == "alpha"
+
+
+def test_push_single_repo_by_custom_name_case_insensitive(capsys) -> None:
+    """测试 gpa push 支持自定义仓库名（不区分大小写）。"""
+    from gitpush.cli import main
+
+    config_path = Path("/tmp/config.toml")
+    config_path.write_text("""
+[defaults]
+commit_template = "update {date}"
+
+[[repos]]
+name = "我的Nvim配置"
+path = "~/Documents/Git/nvim"
+remotes = ["gitee", "github"]
+""")
+
+    with patch("sys.argv", ["gpa", "push", "我的nvim配置", "-c", str(config_path)]), \
+         patch("gitpush.cli.run_single") as mock_run:
+        main()
+        mock_run.assert_called_once()
+        assert mock_run.call_args[0][0].name == "我的Nvim配置"
+
+
+def test_push_single_repo_index_out_of_range(capsys) -> None:
+    """测试 gpa push 序号越界返回失败。"""
+    import pytest
+    from gitpush.cli import main
+
+    config_path = Path("/tmp/config.toml")
+    config_path.write_text("""
+[defaults]
+commit_template = "update {date}"
+
+[[repos]]
+name = "nvim"
+path = "~/Documents/Git/nvim"
+remotes = ["gitee", "github"]
+""")
+
+    with pytest.raises(SystemExit) as exc_info:
+        with patch("sys.argv", ["gpa", "push", "9", "-c", str(config_path)]):
+            main()
+    assert exc_info.value.code == 1
+
+
+def test_settings_show_usage_false(_isolate_settings, capsys, fake_home) -> None:
+    """测试设置 show_usage=false 时无参数运行不显示用法 banner。"""
+    from gitpush.cli import main
+
+    _isolate_settings.write_text("show_usage = false\n")
+
+    default_config = fake_home / ".gitpush.toml"
+    default_config.write_text("""
+[defaults]
+commit_template = "update {date}"
+[[repos]]
+name = "nvim"
+path = "~/Documents/Git/nvim"
+remotes = ["gitee", "github"]
+""")
+
+    with patch("sys.argv", ["gpa"]), \
+         patch("gitpush.cli.load_config_path", return_value=None), \
+         patch("gitpush.cli._interactive_menu") as mock_menu:
+        main()
+        mock_menu.assert_called_once()
+
+    captured = capsys.readouterr()
+    assert "用法:" not in captured.out
+    assert "GPA — Git Push All" not in captured.out
+
+
+def test_settings_default_action_push(_isolate_settings, capsys, fake_home) -> None:
+    """测试设置 default_action=push 时无参数直接推送全部仓库。"""
+    from gitpush.cli import main
+
+    _isolate_settings.write_text('default_action = "push"\nshow_usage = false\n')
+
+    default_config = fake_home / ".gitpush.toml"
+    default_config.write_text("""
+[defaults]
+commit_template = "update {date}"
+[[repos]]
+name = "nvim"
+path = "~/Documents/Git/nvim"
+remotes = ["gitee", "github"]
+""")
+
+    with patch("sys.argv", ["gpa"]), \
+         patch("gitpush.cli.load_config_path", return_value=None), \
+         patch("gitpush.cli.run_all") as mock_run:
+        main()
+        mock_run.assert_called_once()
+
+
+def test_repo_table_desc_order(_isolate_settings, capsys) -> None:
+    """测试 sort_order=desc 时仓库列表倒序显示。"""
+    from gitpush.cli import _print_repo_table
+    from gitpush.config import Config
+    from gitpush.settings import Settings
+
+    config = Config(
+        repos=[
+            RepoConfig(name="zsh", path="~/z", remotes=["github"]),
+            RepoConfig(name="alpha", path="~/a", remotes=["github"]),
+        ]
+    )
+
+    with patch("gitpush.cli._SETTINGS", Settings(sort_order="desc")):
+        _print_repo_table(config)
+
+    captured = capsys.readouterr()
+    assert captured.out.index("zsh") < captured.out.index("alpha")

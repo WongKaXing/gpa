@@ -26,3 +26,14 @@ def _isolate_state_file(tmp_path, monkeypatch):
         "gitpush.state.state_file_path",
         lambda: state_dir / "state.json",
     )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_settings(tmp_path, monkeypatch):
+    """隔离 gpa 设置文件，防止测试写真实 ~/.config/gitpush/settings.toml。"""
+    settings_path = tmp_path / "settings.toml"
+    monkeypatch.setattr(
+        "gitpush.settings.default_settings_path",
+        lambda: settings_path,
+    )
+    return settings_path
