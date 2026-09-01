@@ -7,17 +7,19 @@ from gitpush.config import Config, RepoConfig
 from gitpush.filesync import sync_files
 from gitpush.gitops import git_sync
 from gitpush.reporter import RepoResult, print_summary, ask_retry
+from gitpush.utils import color
 
 
 _STATUS_LABELS = {"ok": "成功", "no_changes": "无变更", "error": "错误"}
 _STATUS_SYMBOLS = {"ok": "✓", "no_changes": "○", "error": "✗"}
+_STATUS_COLORS = {"ok": "32", "no_changes": "33", "error": "31"}
 
 
 def _process_repo(repo: RepoConfig, config_dir: Path) -> RepoResult:
     """对单个仓库执行同步 + git 操作，处理过程中实时输出进度。"""
     result = RepoResult(repo_name=repo.name, status="ok")
 
-    print(f"\n── {repo.name} ──")
+    print(f"\n{color('── ' + repo.name + ' ──', '1')}")
 
     try:
         # 文件同步
@@ -46,13 +48,13 @@ def _process_repo(repo: RepoConfig, config_dir: Path) -> RepoResult:
         result.git_result = git_result
 
         if git_result.committed:
-            print(f"  已提交: {git_result.commit_message}")
+            print(f"  {color('已提交', '32')}: {git_result.commit_message}")
 
         # 推送进度
         for remote in git_result.push_ok:
-            print(f"  推送 {remote}... 成功")
+            print(f"  推送 {remote}... {color('成功', '32')}")
         for remote, err in git_result.push_fail:
-            print(f"  推送 {remote}... 失败 ({err})")
+            print(f"  推送 {remote}... {color('失败', '31')} ({err})")
             result.status = "error"
             result.error_details.append(f"推送失败: {remote} ({err})")
 
@@ -71,7 +73,11 @@ def _process_repo(repo: RepoConfig, config_dir: Path) -> RepoResult:
 
     symbol = _STATUS_SYMBOLS.get(result.status, "?")
     label = _STATUS_LABELS.get(result.status, "?")
-    print(f"  {symbol} {label}")
+    code = _STATUS_COLORS.get(result.status)
+    status_text = f"  {symbol} {label}"
+    if code:
+        status_text = color(status_text, code)
+    print(status_text)
 
     return result
 

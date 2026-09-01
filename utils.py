@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import unicodedata
 from pathlib import Path
 
 
@@ -16,3 +17,34 @@ def atomic_write(path: Path, content: str) -> None:
     except BaseException:
         os.unlink(tmp)
         raise
+
+
+def display_width(text: str) -> int:
+    """计算字符串的终端显示宽度（中文等宽字符计为 2）。"""
+    w = 0
+    for ch in text:
+        ea = unicodedata.east_asian_width(ch)
+        w += 2 if ea in ("W", "F") else 1
+    return w
+
+
+def pad_to(text: str, width: int) -> str:
+    """将字符串填充到指定显示宽度（超出时不截断）。"""
+    current = display_width(text)
+    if current >= width:
+        return text
+    return text + " " * (width - current)
+
+
+def center(text: str, width: int) -> str:
+    """将字符串在指定显示宽度内居中对齐。"""
+    pad = width - display_width(text)
+    if pad <= 0:
+        return text
+    left = pad // 2
+    return " " * left + text + " " * (pad - left)
+
+
+def color(text: str, code: str) -> str:
+    """ANSI 着色：32 绿 / 31 红 / 33 黄 / 36 青 / 1 加粗。"""
+    return f"\033[{code}m{text}\033[0m"

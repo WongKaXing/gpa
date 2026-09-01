@@ -6,7 +6,7 @@ import re as _re
 import subprocess
 from pathlib import Path
 
-from gitpush.utils import atomic_write
+from gitpush.utils import atomic_write, center, color
 
 
 def _setup_path_completion() -> None:
@@ -62,13 +62,21 @@ def _setup_path_completion() -> None:
         readline.parse_and_bind("tab: complete")
 
 
+class WizardCancelled(Exception):
+    """用户在向导中输入 q 取消当前流程（返回上一个模块位置）。"""
+
+
 def _input(prompt: str) -> str:
-    """安全输入封装，优雅处理 EOF/KeyboardInterrupt。"""
+    """安全输入封装，优雅处理 EOF/KeyboardInterrupt，输入 q 取消当前流程。"""
     try:
-        return input(prompt).strip()
+        value = input(prompt).strip()
     except (EOFError, KeyboardInterrupt):
         print("\n已取消。")
         raise SystemExit(0)
+    if value.lower() == "q":
+        print()
+        raise WizardCancelled()
+    return value
 
 
 def _scan_directory(path: str) -> list[str]:
@@ -332,7 +340,13 @@ def reconfigure_repo_in_config(config_path: str | Path, repo_name: str) -> None:
     text = _delete_repo_from_toml(original_text, repo_name)
 
     print(f"\n重新配置仓库: {repo_name}")
-    result = _build_repo_section(1)
+    try:
+        result = _build_repo_section(1)
+    except WizardCancelled:
+        # 恢复原配置
+        atomic_write(config_path, original_text)
+        print("已取消，配置未更改。")
+        return
     if not result:
         # 恢复原配置
         atomic_write(config_path, original_text)
@@ -349,62 +363,73 @@ def reconfigure_repo_in_config(config_path: str | Path, repo_name: str) -> None:
 # ── 主入口 ────────────────────────────────────────────────────
 
 
-def run_wizard(config_path: str | Path | None = None) -> None:
-    """运行交互式配置并写入 ~/.gitpush.toml。"""
+def run_wizard(config_path: str | Path | None = None) -> bool:
+    """运行交互式配置并写入 ~/.gitpush.toml。
+
+    返回 True 表示配置已写入，False 表示用户取消（按 q 返回上一个模块）。
+    """
     if config_path is None:
         config_path = Path.home() / ".gitpush.toml"
     _setup_path_completion()
     config_path = Path(config_path)
 
-    print("╭──────────────────────────────────────────────╮")
-    print("│        GPA — 交互式配置向导                  │")
-    print("╰──────────────────────────────────────────────╯\n")
+    print()
+    print("  " + color("╭", "36") + "─" * 50 + color("╮", "36"))
+    print("  " + color("│", "36") + " " + center("GPA — 交互式配置向导", 48) + " " + color("│", "36"))
+    print("  " + color("╰", "36") + "─" * 50 + color("╯", "36"))
+    print()
 
-    commit_template = _input(
-        "提交信息模板？（默认: 'update {date}'）: "
-    )
-    if not commit_template:
-        commit_template = "update {date}"
+    try:
+        commit_template = _input(
+            "提交信息模板？（默认: 'update {date}'）: "
+        )
+        if not commit_template:
+            commit_template = "update {date}"
 
-    exclude_input = _input(
-        "排除的 glob 匹配模式？（默认: .DS_Store, __pycache__, *.pyc）: "
-    )
-    if not exclude_input:
-        exclude = [".DS_Store", "__pycache__", "*.pyc"]
-    else:
-        exclude = [p.strip() for p in exclude_input.split(",") if p.strip()]
+        exclude_input = _input(
+            "排除的 glob 匹配模式？（默认: .DS_Store, __pycache__, *.pyc）: "
+        )
+        if not exclude_input:
+            exclude = [".DS_Store", "__pycache__", "*.pyc"]
+        else:
+            exclude = [p.strip() for p in exclude_input.split(",") if p.strip()]
 
-    lines: list[str] = []
-    lines.append("[defaults]")
-    lines.append(f'commit_template = "{commit_template}"')
-    exclude_toml = ", ".join(f'"{e}"' for e in exclude)
-    lines.append(f"exclude = [{exclude_toml}]")
-    lines.append("")
+        lines: list[str] = []
+        lines.append("[defaults]")
+        lines.append(f'commit_template = "{commit_template}"')
+        exclude_toml = ", ".join(f'"{e}"' for e in exclude)
+        lines.append(f"exclude = [{exclude_toml}]")
+        lines.append("")
 
-    repo_count = 0
-    session_paths: set[str] = set()  # 本次会话已添加的路径
-    while True:
-        repo_count += 1
-        result = _build_repo_section(repo_count)
-        if result:
-            section_lines, name, path = result
-            # 检查与会话内已添加的仓库是否重复
-            if path in session_paths:
-                _handle_duplicate(config_path, name, path)
-                repo_count -= 1
-                continue
-            session_paths.add(path)
-            lines.extend(section_lines)
+        repo_count = 0
+        session_paths: set[str] = set()  # 本次会话已添加的路径
+        while True:
+            repo_count += 1
+            result = _build_repo_section(repo_count)
+            if result:
+                section_lines, name, path = result
+                # 检查与会话内已添加的仓库是否重复
+                if path in session_paths:
+                    _handle_duplicate(config_path, name, path)
+                    repo_count -= 1
+                    continue
+                session_paths.add(path)
+                lines.extend(section_lines)
 
-        again = _input("\n添加另一个仓库？[y/N]: ")
-        if again.lower() not in ("y", "yes"):
-            break
+            again = _input("\n添加另一个仓库？[y/N]: ")
+            if again.lower() not in ("y", "yes"):
+                break
 
-    atomic_write(config_path, "\n".join(lines) + "\n")
+        atomic_write(config_path, "\n".join(lines) + "\n")
+    except WizardCancelled:
+        print("\n  已取消，未写入任何配置。")
+        return False
+
     print(f"\n 配置已写入 {config_path.resolve()}")
 
     from gitpush.state import save_config_path
     save_config_path(config_path)
+    return True
 
 
 def append_repo_to_config(config_path: str | Path) -> str:
@@ -422,7 +447,11 @@ def append_repo_to_config(config_path: str | Path) -> str:
 
     repo_count = existing.count("[[repos]]")
 
-    result = _build_repo_section(repo_count + 1)
+    try:
+        result = _build_repo_section(repo_count + 1)
+    except WizardCancelled:
+        print("已取消，未添加任何仓库。")
+        return "cancelled"
     if not result:
         print("已取消，未添加任何仓库。")
         return "cancelled"
@@ -432,7 +461,10 @@ def append_repo_to_config(config_path: str | Path) -> str:
     # 检测重复
     dup = _find_duplicate(config_path, name, path)
     if dup:
-        action = _handle_duplicate(config_path, name, path)
+        try:
+            action = _handle_duplicate(config_path, name, path)
+        except WizardCancelled:
+            return "cancelled"
         if action == "push":
             return "duplicate:push"
         elif action == "manage":

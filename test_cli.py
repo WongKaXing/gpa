@@ -402,3 +402,214 @@ def test_get_config_path_no_state_no_default(fake_home, capsys) -> None:
     assert result is None
     captured = capsys.readouterr()
     assert "未找到已保存的配置" in captured.out
+
+
+def test_interactive_menu_quit_with_q(capsys) -> None:
+    """测试交互菜单输入 q 直接退出程序。"""
+    from gitpush.cli import _interactive_menu
+
+    config_path = Path("/tmp/config.toml")
+    config_path.write_text("""
+[defaults]
+commit_template = "update {date}"
+
+[[repos]]
+name = "nvim"
+path = "~/Documents/Git/nvim"
+remotes = ["gitee", "github"]
+""")
+
+    with patch("gitpush.cli._safe_input", return_value="q"):
+        _interactive_menu(config_path)
+
+    captured = capsys.readouterr()
+    assert "退出" in captured.out
+
+
+def test_push_single_repo_interactive_quit(capsys) -> None:
+    """测试 _push_single_repo 交互选择时输入 q 返回主菜单。"""
+    config = Config(
+        repos=[
+            RepoConfig(
+                name="nvim",
+                path="~/Documents/Git/nvim",
+                remotes=["gitee", "github"],
+            ),
+        ]
+    )
+    config_path = Path("/tmp/config.toml")
+
+    with patch("gitpush.cli._input_simple", return_value="q"):
+        result = _push_single_repo(config, config_path)
+    assert result is False
+
+
+def test_manage_repo_menu_quit(capsys) -> None:
+    """测试管理仓库菜单输入 q 返回主菜单。"""
+    from gitpush.cli import _manage_repo_menu
+
+    config_path = Path("/tmp/config.toml")
+    config_path.write_text("""
+[defaults]
+commit_template = "update {date}"
+
+[[repos]]
+name = "nvim"
+path = "~/Documents/Git/nvim"
+remotes = ["gitee", "github"]
+""")
+
+    with patch("gitpush.cli._input_simple", return_value="q"):
+        result = _manage_repo_menu(config_path)
+    assert result is False
+
+
+def test_manage_repo_menu_op_quit_returns_to_selection(capsys) -> None:
+    """测试操作菜单按 q 返回仓库选择列表（上一个模块），再按 q 返回主菜单。"""
+    from gitpush.cli import _manage_repo_menu
+
+    config_path = Path("/tmp/config.toml")
+    config_path.write_text("""
+[defaults]
+commit_template = "update {date}"
+
+[[repos]]
+name = "nvim"
+path = "~/Documents/Git/nvim"
+remotes = ["gitee", "github"]
+""")
+
+    # 第 1 次: 选择仓库 "1"；第 2 次: 操作菜单按 q 返回列表；第 3 次: 列表按 q 返回主菜单
+    with patch("gitpush.cli._input_simple", side_effect=["1", "q", "q"]) as mock_input:
+        result = _manage_repo_menu(config_path)
+    assert result is False
+    assert mock_input.call_count == 3
+
+
+def test_cli_all_command(capsys) -> None:
+    """测试 gpa -a 命令直接推送所有仓库。"""
+    from gitpush.cli import main
+
+    config_path = Path("/tmp/config.toml")
+    config_path.write_text("""
+[defaults]
+commit_template = "update {date}"
+
+[[repos]]
+name = "nvim"
+path = "~/Documents/Git/nvim"
+remotes = ["gitee", "github"]
+""")
+
+    with patch("sys.argv", ["gpa", "-a", "-c", str(config_path)]), \
+         patch("gitpush.cli.run_all") as mock_run:
+        main()
+        mock_run.assert_called_once()
+
+
+def test_cli_all_auto_detect_config(fake_home) -> None:
+    """测试 gpa -a 无 -c 时自动使用默认配置文件，无需用户指定。"""
+    from gitpush.cli import main
+
+    default_config = fake_home / ".gitpush.toml"
+    default_config.write_text("""
+[defaults]
+commit_template = "update {date}"
+
+[[repos]]
+name = "nvim"
+path = "~/Documents/Git/nvim"
+remotes = ["gitee", "github"]
+""")
+
+    with patch("sys.argv", ["gpa", "-a"]), \
+         patch("gitpush.cli.load_config_path", return_value=None), \
+         patch("gitpush.cli.run_all") as mock_run:
+        main()
+        mock_run.assert_called_once()
+
+
+def test_cli_all_dry_run(capsys) -> None:
+    """测试 gpa -a --dry-run 只预览不执行。"""
+    from gitpush.cli import main
+
+    config_path = Path("/tmp/config.toml")
+    config_path.write_text("""
+[defaults]
+commit_template = "update {date}"
+
+[[repos]]
+name = "nvim"
+path = "~/Documents/Git/nvim"
+remotes = ["gitee", "github"]
+""")
+
+    with patch("sys.argv", ["gpa", "-a", "--dry-run", "-c", str(config_path)]), \
+         patch("gitpush.cli.run_all") as mock_run:
+        main()
+        mock_run.assert_not_called()
+
+    captured = capsys.readouterr()
+    assert "预览模式" in captured.out
+
+
+def test_cli_version(capsys) -> None:
+    """测试 gpa -v 显示版本信息。"""
+    import pytest
+    from gitpush import __version__
+    from gitpush.cli import main
+
+    with pytest.raises(SystemExit) as exc_info:
+        with patch("sys.argv", ["gpa", "-v"]):
+            main()
+    assert exc_info.value.code == 0
+
+    captured = capsys.readouterr()
+    assert "gpa" in captured.out
+    assert __version__ in captured.out
+
+
+def test_cli_config_override_does_not_save_state(capsys) -> None:
+    """测试 -c 一次性覆盖不写入状态文件，避免覆盖已记住的配置。"""
+    from gitpush.cli import main
+
+    config_path = Path("/tmp/config.toml")
+    config_path.write_text("""
+[defaults]
+commit_template = "update {date}"
+
+[[repos]]
+name = "nvim"
+path = "~/Documents/Git/nvim"
+remotes = ["gitee", "github"]
+""")
+
+    with patch("sys.argv", ["gpa", "-a", "-c", str(config_path)]), \
+         patch("gitpush.cli.run_all"), \
+         patch("gitpush.cli.save_config_path") as mock_save:
+        main()
+        mock_save.assert_not_called()
+
+
+def test_interactive_menu_manage_clears_screen(capsys) -> None:
+    """测试选 4 管理仓库前清屏，返回首页后也清屏重绘，避免输出堆积。"""
+    from gitpush.cli import _interactive_menu
+
+    config_path = Path("/tmp/config.toml")
+    config_path.write_text("""
+[defaults]
+commit_template = "update {date}"
+
+[[repos]]
+name = "nvim"
+path = "~/Documents/Git/nvim"
+remotes = ["gitee", "github"]
+""")
+
+    with patch("gitpush.cli._safe_input", side_effect=["4", "q"]), \
+         patch("gitpush.cli._input_simple", return_value="q"), \
+         patch("gitpush.cli._clear_screen") as mock_clear:
+        _interactive_menu(config_path)
+
+    # 进入 4 前清一次 + 返回首页重绘清一次
+    assert mock_clear.call_count == 2

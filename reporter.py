@@ -6,23 +6,8 @@ from dataclasses import dataclass, field
 
 from gitpush.filesync import SyncResult
 from gitpush.gitops import GitResult
-
-
-def _display_width(text: str) -> int:
-    """计算字符串的终端显示宽度（中文等宽字符计为 2）。"""
-    w = 0
-    for ch in text:
-        ea = unicodedata.east_asian_width(ch)
-        w += 2 if ea in ("W", "F") else 1
-    return w
-
-
-def _pad_to(text: str, width: int) -> str:
-    """将字符串填充到指定显示宽度。"""
-    current = _display_width(text)
-    if current >= width:
-        return text
-    return text + " " * (width - current)
+from gitpush.utils import display_width as _display_width, pad_to as _pad_to
+from gitpush.utils import color as _color
 
 
 @dataclass
@@ -38,6 +23,12 @@ _STATUS_ICONS = {
     "ok": "成功",
     "no_changes": "无变更",
     "error": "错误",
+}
+
+_STATUS_COLORS = {
+    "ok": "32",       # 绿
+    "no_changes": "33",  # 黄
+    "error": "31",    # 红
 }
 
 
@@ -111,14 +102,20 @@ def print_summary(results: list[RepoResult]) -> list[str]:
         # 截断过长详情
         if _display_width(details) > w_details:
             details = _truncate_to_width(details, w_details - 1) + "…"
-        print(_format_row(r.repo_name, icon, details, (w_name, w_status, w_details)))
+        # 先按纯文本补位，再着色，避免转义字符破坏列对齐
+        padded_status = _pad_to(icon, w_status)
+        code = _STATUS_COLORS.get(r.status)
+        if code:
+            padded_status = _color(padded_status, code)
+        print(_format_row(r.repo_name, padded_status, details, (w_name, w_status, w_details)))
         if r.status == "error":
             errored.append(r.repo_name)
 
     print(bot)
 
     if errored:
-        print(f"\n {len(errored)} 个仓库出错: {', '.join(errored)}")
+        msg = f" {len(errored)} 个仓库出错: {', '.join(errored)}"
+        print(f"\n{_color(msg, '31')}")
 
     return errored
 
@@ -137,9 +134,9 @@ def _truncate_to_width(text: str, max_width: int) -> str:
 
 
 def ask_retry() -> bool:
-    """提示用户是否重试失败的仓库。"""
+    """提示用户是否重试失败的仓库。输入 q 视为放弃重试。"""
     try:
-        answer = input("\n重试失败的仓库？[y/n]: ").strip().lower()
+        answer = input("\n重试失败的仓库？[y/n] (q 退出): ").strip().lower()
         return answer in ("y", "yes")
     except (EOFError, KeyboardInterrupt):
         print()
