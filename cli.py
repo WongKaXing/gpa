@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from gitpush import __version__ as _VERSION
-from gitpush.config import parse_config, Config
+from gitpush.config import parse_config, Config, RepoConfig
 from gitpush.orchestrator import run_all, run_single
 from gitpush.state import load_config_path, save_config_path
 from gitpush.utils import center, color, display_width, pad_to
@@ -122,6 +122,31 @@ def _print_banner() -> None:
     print()
 
 
+def _sorted_repos(config: Config) -> list[RepoConfig]:
+    """按仓库名称字母顺序（不区分大小写）排序的仓库列表，作为默认显示顺序。"""
+    return sorted(config.repos, key=lambda r: r.name.lower())
+
+
+def _print_repo_table(config: Config) -> None:
+    """打印仓库列表（首页摘要与 gpa list 共用格式）。
+
+    ── 已配置 N 个仓库 ──
+      [1]  name   path   remotes
+    """
+    repos = _sorted_repos(config)
+    print(f"  {color('── 已配置 ' + str(len(repos)) + ' 个仓库 ──', _BOLD)}")
+    if not repos:
+        return
+    max_name = max(display_width(r.name) for r in repos)
+    max_path = max(display_width(str(r.path)) for r in repos)
+    for i, repo in enumerate(repos, 1):
+        idx = f"[{i}]".ljust(4)  # [1]..[10] 的 ] 与名称列对齐
+        name_col = pad_to(repo.name, max_name)
+        path_col = pad_to(str(repo.path), max_path)
+        remote_str = ", ".join(repo.remotes) if repo.remotes else "(无远程)"
+        print(f"  {idx} {name_col}  {path_col}  {color(remote_str, _CYAN)}")
+
+
 def _print_config_summary(config: Config, config_path: Path) -> None:
     """打印当前配置的简要信息（不含文件详情）。"""
     print()
@@ -133,16 +158,7 @@ def _print_config_summary(config: Config, config_path: Path) -> None:
     print(f"  提交模板: {color(config.commit_template, _GREEN)}")
     print(f"  排除规则: {', '.join(config.exclude)}")
     print()
-    print(f"  {color('── 已配置 ' + str(len(config.repos)) + ' 个仓库 ──', _BOLD)}")
-    if config.repos:
-        max_name = max(display_width(r.name) for r in config.repos)
-        max_path = max(display_width(str(r.path)) for r in config.repos)
-        for i, repo in enumerate(config.repos, 1):
-            idx = f"[{i}]".ljust(4)  # [1]..[10] 的 ] 与名称列对齐
-            name_col = pad_to(repo.name, max_name)
-            path_col = pad_to(str(repo.path), max_path)
-            remote_str = ", ".join(repo.remotes) if repo.remotes else "(无远程)"
-            print(f"  {idx} {name_col}  {path_col}  {color(remote_str, _CYAN)}")
+    _print_repo_table(config)
     print()
 
 
@@ -168,16 +184,9 @@ def _print_repo_detail(config: Config, repo_name: str) -> None:
 
 
 def _list_repos(config: Config) -> None:
-    """列出所有已配置的仓库。"""
-    print("\n已配置的仓库：")
-    if not config.repos:
-        print("  （无）")
-        return
-    for i, repo in enumerate(config.repos, 1):
-        print(f"  {i}. {repo.name}")
-        print(f"     {repo.path}")
-        remote_str = ", ".join(repo.remotes) if repo.remotes else "(无远程)"
-        print(f"     远程: {remote_str}")
+    """列出所有已配置的仓库（与首页摘要同格式）。"""
+    print()
+    _print_repo_table(config)
     print()
 
 
@@ -209,10 +218,11 @@ def _push_single_repo(
         run_single(target, config_path)
         return True
 
-    # 交互模式：显示列表选择
+    # 交互模式：显示列表选择（按名称字母顺序）
+    repos = _sorted_repos(config)
     print()
     print(_box_top("推送指定仓库"))
-    for i, repo in enumerate(config.repos, 1):
+    for i, repo in enumerate(repos, 1):
         remote_str = ", ".join(repo.remotes) if repo.remotes else "(无远程)"
         print(_box_row(f"[{i}]".ljust(4) + repo.name))
         print(_box_row(f"      {repo.path}"))
@@ -227,12 +237,12 @@ def _push_single_repo(
         return False
     try:
         idx = int(sel) - 1
-        if idx < 0 or idx >= len(config.repos):
+        if idx < 0 or idx >= len(repos):
             return False
     except (ValueError, IndexError):
         return False
 
-    target = config.repos[idx]
+    target = repos[idx]
     run_single(target, config_path)
     return True
 
@@ -241,7 +251,7 @@ def _manage_repo_menu(config_path: Path) -> bool:
     """管理仓库子菜单：选择仓库 → 查看详情 → 删除或重配。返回 True 表示配置已变更。"""
     while True:
         config = parse_config(config_path)
-        names = [repo.name for repo in config.repos if repo.name]
+        names = [repo.name for repo in _sorted_repos(config) if repo.name]
         if not names:
             print("  没有已配置的仓库。")
             return False

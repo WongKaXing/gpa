@@ -7,7 +7,7 @@ from gitpush.config import Config, RepoConfig
 
 
 def test_list_repos(capsys) -> None:
-    """测试 _list_repos 函数输出仓库列表。"""
+    """测试 _list_repos 函数输出仓库列表（按名称字母排序）。"""
     config = Config(
         repos=[
             RepoConfig(
@@ -26,13 +26,14 @@ def test_list_repos(capsys) -> None:
     _list_repos(config)
 
     captured = capsys.readouterr()
-    assert "已配置的仓库" in captured.out
-    assert "1. nvim" in captured.out
-    assert "~/Documents/Git/nvim" in captured.out
-    assert "远程: gitee, github" in captured.out
-    assert "2. dotfiles" in captured.out
+    assert "已配置 2 个仓库" in captured.out
+    # 默认按名称字母排序：dotfiles 在前
+    assert "[1]  dotfiles" in captured.out
     assert "~/Documents/Git/dotfiles" in captured.out
-    assert "远程: github" in captured.out
+    assert "github" in captured.out
+    assert "[2]  nvim" in captured.out
+    assert "~/Documents/Git/nvim" in captured.out
+    assert "gitee, github" in captured.out
 
 
 def test_list_repos_empty(capsys) -> None:
@@ -42,8 +43,7 @@ def test_list_repos_empty(capsys) -> None:
     _list_repos(config)
 
     captured = capsys.readouterr()
-    assert "已配置的仓库" in captured.out
-    assert "（无）" in captured.out
+    assert "已配置 0 个仓库" in captured.out
 
 
 def test_list_repos_no_remotes(capsys) -> None:
@@ -61,10 +61,10 @@ def test_list_repos_no_remotes(capsys) -> None:
     _list_repos(config)
 
     captured = capsys.readouterr()
-    assert "已配置的仓库" in captured.out
-    assert "1. local-repo" in captured.out
+    assert "已配置 1 个仓库" in captured.out
+    assert "[1]  local-repo" in captured.out
     assert "~/Documents/Git/local" in captured.out
-    assert "远程: (无远程)" in captured.out
+    assert "(无远程)" in captured.out
 
 
 def test_push_single_repo_by_name(capsys) -> None:
@@ -119,7 +119,7 @@ def test_push_single_repo_empty_config(capsys) -> None:
 
 
 def test_push_single_repo_interactive(capsys) -> None:
-    """测试 _push_single_repo 函数交互式选择。"""
+    """测试 _push_single_repo 函数交互式选择（默认按名称字母排序，选 1 为 dotfiles）。"""
     config = Config(
         repos=[
             RepoConfig(
@@ -140,7 +140,8 @@ def test_push_single_repo_interactive(capsys) -> None:
          patch("gitpush.cli._input_simple", return_value="1"):
         result = _push_single_repo(config, config_path)
         assert result is True
-        mock_run.assert_called_once_with(config.repos[0], config_path)
+        # 排序后 [1] = dotfiles（原 config.repos[1]）
+        mock_run.assert_called_once_with(config.repos[1], config_path)
 
 
 def test_push_single_repo_interactive_invalid_input(capsys) -> None:
@@ -310,8 +311,8 @@ remotes = ["gitee", "github"]
         main()
 
     captured = capsys.readouterr()
-    assert "已配置的仓库" in captured.out
-    assert "1. nvim" in captured.out
+    assert "已配置 1 个仓库" in captured.out
+    assert "[1]  nvim" in captured.out
 
 
 def test_cli_push_command(capsys) -> None:
@@ -613,3 +614,23 @@ remotes = ["gitee", "github"]
 
     # 进入 4 前清一次 + 返回首页重绘清一次
     assert mock_clear.call_count == 2
+
+
+def test_repo_table_sorted_alphabetically(capsys) -> None:
+    """测试仓库列表默认按名称字母排序（不区分大小写）。"""
+    from gitpush.cli import _print_repo_table
+
+    config = Config(
+        repos=[
+            RepoConfig(name="zsh", path="~/z", remotes=["github"]),
+            RepoConfig(name="alpha", path="~/a", remotes=["github"]),
+            RepoConfig(name="Beta", path="~/b", remotes=["github"]),
+        ]
+    )
+
+    _print_repo_table(config)
+
+    captured = capsys.readouterr()
+    # 排序后顺序: alpha → Beta → zsh
+    assert captured.out.index("alpha") < captured.out.index("Beta")
+    assert captured.out.index("Beta") < captured.out.index("zsh")
