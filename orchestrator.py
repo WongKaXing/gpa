@@ -5,7 +5,7 @@ from pathlib import Path
 
 from gitpush.config import Config, RepoConfig
 from gitpush.filesync import sync_files
-from gitpush.gitops import git_sync
+from gitpush.gitops import git_sync, ensure_git_repo
 from gitpush.reporter import RepoResult, print_summary, ask_retry
 from gitpush.settings import order_repos
 from gitpush.utils import color
@@ -23,8 +23,8 @@ def _process_repo(repo: RepoConfig, config_dir: Path) -> RepoResult:
     print(f"\n{color('── ' + repo.name + ' ──', '1')}")
 
     try:
-        # 文件同步
-        if repo.files:
+        # 文件同步（files 映射 或 sync_dir 整目录同步）
+        if repo.files or repo.sync_dir:
             sync_result = sync_files(repo, config_dir)
             result.sync_result = sync_result
             parts = []
@@ -39,6 +39,16 @@ def _process_repo(repo: RepoConfig, config_dir: Path) -> RepoResult:
                     result.error_details.append(f"源文件未找到: {s}")
         else:
             print(f"  (无文件配置)")
+
+        # 确保 git 仓库已初始化（新仓库自动 git init / 远程 / 分支）
+        msgs = ensure_git_repo(
+            repo.path,
+            repo.remotes,
+            repo.remote_urls,
+            repo.branch or "main",
+        )
+        for m in msgs:
+            print(f"  {color(m, '36')}")
 
         # Git 同步
         git_result = git_sync(

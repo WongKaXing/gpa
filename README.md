@@ -64,6 +64,29 @@ dest = "."                            # 目标相对路径（相对于仓库根�
 
 两种方式可在同一仓库中并存。
 
+### 远程 URL 与分支（自动构建仓库）
+
+`[[repos.remotes]]` 子表可为每个远程配置完整 URL，`branch` 字段指定目标分支。**新仓库无需手动 `git init`**：运行 `gpa push` 时会自动执行 git init、添加远程、切换分支并首次推送：
+
+```toml
+[[repos]]
+name = "newproj"
+path = "~/Projects/newproj/"
+branch = "main"                       # 可选，默认 main
+
+[[repos.remotes]]
+name = "gitee"
+url = "git@gitee.com:WongKaXing/newproj.git"
+
+[[repos.remotes]]
+name = "github"
+url = "git@github.com:WongKaXing/newproj.git"
+```
+
+- **新仓库**：目录无 `.git` 时自动 `git init -b <branch>` → 按配置添加远程 → 同步文件 → 首次提交推送
+- **现有仓库**：远程缺失自动 `git remote add`；URL 与配置不符自动 `set-url` 纠正；分支不一致自动切换
+- **注意**：远程空仓库（gitee/github 上的空 repo）需先在网页手动创建；只配置远程名不配 URL 时（旧写法 `remotes = ["gitee"]`），会提示补充 URL
+
 ## gpa 设置文件
 
 gpa 自身的行为通过 `~/.config/gitpush/settings.toml` 配置。**首次运行 gpa 会自动生成带注释说明的模板文件**，列出全部可配置参数：

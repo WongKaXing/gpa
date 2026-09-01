@@ -83,3 +83,69 @@ def test_push_missing_remote():
         result = git_sync(repo, remotes=["nonexistent"], commit_template="update {date}")
         assert len(result.push_fail) == 1
         assert result.push_fail[0][0] == "nonexistent"
+
+
+def test_ensure_git_repo_initializes_new(tmp_path):
+    """测试新目录自动 git init + 添加远程 + 切分支。"""
+    from gitpush.gitops import ensure_git_repo
+
+    repo_dir = tmp_path / "newrepo"
+    msgs = ensure_git_repo(
+        repo_dir,
+        remotes=["gitee", "github"],
+        remote_urls={
+            "gitee": "git@gitee.com:user/newrepo.git",
+            "github": "git@github.com:user/newrepo.git",
+        },
+        branch="main",
+    )
+
+    assert (repo_dir / ".git").exists()
+    remotes = __import__("subprocess").run(
+        ["git", "remote"], cwd=repo_dir, capture_output=True, text=True
+    ).stdout.splitlines()
+    assert "gitee" in remotes and "github" in remotes
+    branch = __import__("subprocess").run(
+        ["git", "branch", "--show-current"], cwd=repo_dir, capture_output=True, text=True
+    ).stdout.strip()
+    assert branch == "main"
+    assert any("已初始化" in m for m in msgs)
+    assert any("已添加远程" in m for m in msgs)
+
+
+def test_ensure_git_repo_updates_existing_remote(tmp_path):
+    """测试已有仓库远程 URL 不匹配时自动 set-url。"""
+    import subprocess
+    from gitpush.gitops import ensure_git_repo
+
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo_dir, capture_output=True)
+    subprocess.run(
+        ["git", "remote", "add", "gitee", "git@gitee.com:old/old.git"],
+        cwd=repo_dir, capture_output=True,
+    )
+
+    msgs = ensure_git_repo(
+        repo_dir,
+        remotes=["gitee"],
+        remote_urls={"gitee": "git@gitee.com:user/new.git"},
+        branch="main",
+    )
+
+    url = subprocess.run(
+        ["git", "remote", "get-url", "gitee"], cwd=repo_dir, capture_output=True, text=True
+    ).stdout.strip()
+    assert url == "git@gitee.com:user/new.git"
+    assert any("URL 已更新" in m for m in msgs)
+
+
+def test_ensure_git_repo_missing_url_hint(tmp_path):
+    """测试只有远程名没有 URL 时给出补充提示（不报错）。"""
+    from gitpush.gitops import ensure_git_repo
+
+    repo_dir = tmp_path / "repo"
+    msgs = ensure_git_repo(repo_dir, remotes=["gitee"], remote_urls={}, branch="main")
+
+    assert (repo_dir / ".git").exists()
+    assert any("未配置 URL" in m for m in msgs)

@@ -35,6 +35,63 @@ def _fill_template(template: str) -> str:
     return template.format(date=date.today().isoformat())
 
 
+def ensure_git_repo(
+    repo_path: str | Path,
+    remotes: list[str],
+    remote_urls: dict[str, str] | None = None,
+    branch: str = "main",
+) -> list[str]:
+    """确保路径已初始化为 git 仓库，且远程与分支与配置一致。
+
+    用于新仓库自动构建（git init + 添加远程 + 切分支）以及
+    现有仓库的远程/分支校正。返回提示信息列表（不抛异常）。
+
+    Args:
+        repo_path: 仓库目录（不存在时会创建）。
+        remotes: 配置的远程名称列表（有 URL 的优先用 URL）。
+        remote_urls: 远程名 -> URL 映射（[[repos.remotes]] url 字段）。
+        branch: 目标分支（默认 main）。
+    """
+    msgs: list[str] = []
+    repo = Path(repo_path).expanduser().resolve()
+    remote_urls = remote_urls or {}
+
+    if not (repo / ".git").exists():
+        repo.mkdir(parents=True, exist_ok=True)
+        # git init -b 需要 git >= 2.28，低版本回退 init + checkout -b
+        proc = _run(["git", "init", "-b", branch], cwd=repo)
+        if proc.returncode != 0:
+            _run(["git", "init"], cwd=repo)
+            _run(["git", "checkout", "-b", branch], cwd=repo)
+        msgs.append(f"已初始化 git 仓库 (分支 {branch})")
+
+    existing = _run(["git", "remote"], cwd=repo).stdout.splitlines()
+    for name in remotes:
+        url = remote_urls.get(name)
+        if name in existing:
+            if url:
+                cur = _run(["git", "remote", "get-url", name], cwd=repo).stdout.strip()
+                if cur != url:
+                    _run(["git", "remote", "set-url", name, url], cwd=repo)
+                    msgs.append(f"远程 {name} URL 已更新")
+        else:
+            if url:
+                _run(["git", "remote", "add", name, url], cwd=repo)
+                msgs.append(f"已添加远程 {name}")
+            else:
+                msgs.append(f"远程 {name} 未配置 URL，请在 ~/.gitpush.toml 的 [[repos.remotes]] 中补充")
+
+    # 分支校正
+    cur_branch = _run(["git", "branch", "--show-current"], cwd=repo).stdout.strip()
+    if cur_branch and cur_branch != branch:
+        proc = _run(["git", "checkout", branch], cwd=repo)
+        if proc.returncode != 0:
+            _run(["git", "checkout", "-b", branch], cwd=repo)
+        msgs.append(f"已切换到分支 {branch}")
+
+    return msgs
+
+
 def git_sync(
     repo_path: str | Path,
     remotes: list[str],

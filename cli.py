@@ -523,6 +523,8 @@ def _main() -> None:
             print(f"预览模式 — 将处理 {len(config.repos)} 个仓库:")
             for repo in _ordered_repos(config):
                 print(f"  [{repo.name}] {repo.path} → 远程: {repo.remotes}")
+                if repo.sync_dir:
+                    print(f"    同步目录: {repo.sync_dir}")
                 for f in repo.files:
                     print(f"    复制: {f.source} → {f.dest}")
             return

@@ -135,3 +135,57 @@ dest = "."
         assert cfg.repos[1].exclude == [".DS_Store", "*.conf.bak"]
     finally:
         tmp.unlink()
+
+
+def test_parse_remotes_with_urls_and_branch():
+    """测试 [[repos.remotes]] 子表（name/url）与 branch 字段解析。"""
+    toml = """
+[[repos]]
+name = "newproj"
+path = "~/Projects/newproj/"
+branch = "main"
+
+[[repos.remotes]]
+name = "gitee"
+url = "git@gitee.com:WongKaXing/newproj.git"
+
+[[repos.remotes]]
+name = "github"
+url = "git@github.com:WongKaXing/newproj.git"
+"""
+    with tempfile.NamedTemporaryFile(mode="wb", suffix=".toml", delete=False) as f:
+        f.write(toml.encode())
+        tmp = Path(f.name)
+
+    try:
+        cfg = parse_config(tmp)
+        repo = cfg.repos[0]
+        assert repo.remotes == ["gitee", "github"]
+        assert repo.remote_urls == {
+            "gitee": "git@gitee.com:WongKaXing/newproj.git",
+            "github": "git@github.com:WongKaXing/newproj.git",
+        }
+        assert repo.branch == "main"
+    finally:
+        tmp.unlink()
+
+
+def test_parse_remotes_legacy_strings():
+    """测试旧式 remotes = [\"gitee\", \"github\"] 兼容。"""
+    toml = """
+[[repos]]
+name = "old"
+path = "~/old"
+remotes = ["gitee", "github"]
+"""
+    with tempfile.NamedTemporaryFile(mode="wb", suffix=".toml", delete=False) as f:
+        f.write(toml.encode())
+        tmp = Path(f.name)
+
+    try:
+        cfg = parse_config(tmp)
+        assert cfg.repos[0].remotes == ["gitee", "github"]
+        assert cfg.repos[0].remote_urls == {}
+        assert cfg.repos[0].branch == "main"
+    finally:
+        tmp.unlink()

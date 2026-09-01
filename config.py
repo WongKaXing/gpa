@@ -21,6 +21,8 @@ class RepoConfig:
     commit_template: str | None = None
     exclude: list[str] | None = None
     sync_dir: str | None = None  # 同步整个目录（配合 exclude 排除），与 files 二选一
+    remote_urls: dict[str, str] = field(default_factory=dict)  # 远程名 -> URL（来自 remotes 子表）
+    branch: str = "main"  # 目标分支（新仓库 git init 时使用）
 
 
 @dataclass
@@ -66,15 +68,31 @@ def parse_config(config_path: str | Path) -> Config:
             if not dest:
                 raise SystemExit(f"仓库 '{name}' 的文件配置 #{j} 缺少 'dest' 字段")
             files.append(FileEntry(source=source, dest=dest))
+
+        # remotes 支持两种写法：
+        #   旧: remotes = ["gitee", "github"]
+        #   新: [[repos.remotes]] name = "gitee" url = "..."  （或内嵌表 [{...}]）
+        remotes: list[str] = []
+        remote_urls: dict[str, str] = {}
+        for r in repo_raw.get("remotes", []):
+            if isinstance(r, str):
+                remotes.append(r)
+            elif isinstance(r, dict) and r.get("name"):
+                remotes.append(r["name"])
+                if r.get("url"):
+                    remote_urls[r["name"]] = r["url"]
+
         repos.append(
             RepoConfig(
                 name=name,
                 path=path,
-                remotes=repo_raw.get("remotes", []),
+                remotes=remotes,
                 files=files,
                 commit_template=repo_raw.get("commit_template", default_template),
                 exclude=repo_raw.get("exclude", default_exclude),
                 sync_dir=repo_raw.get("sync_dir"),
+                remote_urls=remote_urls,
+                branch=repo_raw.get("branch", "main"),
             )
         )
 
