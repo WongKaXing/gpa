@@ -85,6 +85,59 @@ def test_push_missing_remote():
         assert result.push_fail[0][0] == "nonexistent"
 
 
+def test_pushes_pending_commit_without_new_changes(tmp_path):
+    """回归：已提交但未推送的提交，即使这次没有新改动也要推上去。"""
+    repo = tmp_path / "local"
+    repo.mkdir()
+    _init_repo(repo)
+
+    bare = tmp_path / "bare.git"
+    bare.mkdir()
+    _init_bare_repo(bare)
+    subprocess.run(
+        ["git", "remote", "add", "origin", str(bare)], cwd=repo, capture_output=True
+    )
+
+    # 模拟「上次推送失败，留下未推的提交」：只提交，不推送
+    (repo / "pending.txt").write_text("pending")
+    subprocess.run(["git", "add", "-A"], cwd=repo, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "pending"], cwd=repo, capture_output=True)
+
+    result = git_sync(repo, remotes=["origin"], commit_template="update {date}")
+
+    assert result.committed is False  # 这次没有新改动
+    assert result.pushed is True  # 但把未推的提交推出去了
+    assert result.push_ok == ["origin"]
+    assert result.push_fail == []
+    log = subprocess.run(
+        ["git", "log", "--oneline"], cwd=bare, capture_output=True, text=True
+    ).stdout
+    assert "pending" in log
+
+
+def test_up_to_date_repo_is_not_pushed_again(tmp_path):
+    """没有新改动、也没有未推提交时，不该再推一次（保持「无变更」快速路径）。"""
+    repo = tmp_path / "local"
+    repo.mkdir()
+    _init_repo(repo)
+
+    bare = tmp_path / "bare.git"
+    bare.mkdir()
+    _init_bare_repo(bare)
+    subprocess.run(
+        ["git", "remote", "add", "origin", str(bare)], cwd=repo, capture_output=True
+    )
+
+    (repo / "new.txt").write_text("first")
+    first = git_sync(repo, remotes=["origin"], commit_template="update {date}")
+    assert first.pushed is True
+
+    second = git_sync(repo, remotes=["origin"], commit_template="update {date}")
+    assert second.committed is False
+    assert second.pushed is False
+    assert second.push_ok == []
+
+
 def test_ensure_git_repo_initializes_new(tmp_path):
     """测试新目录自动 git init + 添加远程 + 切分支。"""
     from gitpush.gitops import ensure_git_repo

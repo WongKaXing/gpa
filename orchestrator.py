@@ -73,7 +73,8 @@ def _process_repo(repo: RepoConfig, config_dir: Path) -> RepoResult:
             # 没有任何变更，也没推送
             pass
 
-        if result.status == "ok" and not git_result.committed:
+        if result.status == "ok" and not git_result.committed and not git_result.pushed:
+            # 没有新提交、也没把旧提交推出去 → 才是真的「无变更」
             if not git_result.push_fail:
                 result.status = "no_changes"
 

@@ -11,6 +11,7 @@ from pathlib import Path
 class GitResult:
     committed: bool = False
     commit_message: str = ""
+    pushed: bool = False  # 本次是否真的把提交推到了远程（用于区分「无变更」与「推了旧提交」）
     push_ok: list[str] = field(default_factory=list)
     push_fail: list[tuple[str, str]] = field(default_factory=list)
 
@@ -29,6 +30,17 @@ def _remote_exists(name: str, repo_path: Path) -> bool:
 def _has_staged_changes(repo_path: Path) -> bool:
     result = _run(["git", "diff", "--cached", "--quiet"], cwd=repo_path)
     return result.returncode != 0
+
+
+def _has_unpushed_commits(repo_path: Path) -> bool:
+    """HEAD 是否领先上游（有已提交但没推上去的提交）。
+
+    没有上游（首次推送）时保守返回 True，让 push 去建立上游。
+    """
+    result = _run(["git", "rev-list", "--count", "@{upstream}..HEAD"], cwd=repo_path)
+    if result.returncode != 0:
+        return True
+    return result.stdout.strip() not in ("", "0")
 
 
 def _fill_template(template: str) -> str:
@@ -121,7 +133,8 @@ def git_sync(
         _run(["git", "commit", "-m", msg], cwd=repo)
         result.committed = True
         result.commit_message = msg
-    else:
+    elif not _has_unpushed_commits(repo):
+        # 既没有新改动，也没有未推送的提交 → 确实无事可做
         return result
 
     for remote in remotes:
@@ -131,6 +144,8 @@ def git_sync(
         proc = _run(["git", "push", "-u", remote, "HEAD"], cwd=repo)
         if proc.returncode == 0:
             result.push_ok.append(remote)
+            if "Everything up-to-date" not in f"{proc.stdout}\n{proc.stderr}":
+                result.pushed = True
         else:
             err = proc.stderr.strip().split("\n")[-1] if proc.stderr.strip() else "未知错误"
             result.push_fail.append((remote, err))
