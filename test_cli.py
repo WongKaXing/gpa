@@ -140,7 +140,7 @@ def test_push_single_repo_interactive(capsys) -> None:
         result = _push_single_repo(config, config_path)
         assert result is True
         # 排序后 [1] = dotfiles（原 config.repos[1]）
-        mock_run.assert_called_once_with(config.repos[1], config_path)
+        mock_run.assert_called_once_with(config.repos[1], config_path, message=None)
 
 
 def test_push_single_repo_interactive_invalid_input(capsys) -> None:
@@ -775,3 +775,72 @@ def test_repo_table_desc_order(_isolate_settings, capsys) -> None:
 
     captured = capsys.readouterr()
     assert captured.out.index("zsh") < captured.out.index("alpha")
+
+
+def test_cli_push_with_message(capsys) -> None:
+    """测试 gpa push <name> -m <信息> 把提交信息透传给 run_single。"""
+    from gitpush.cli import main
+
+    config_path = Path("/tmp/config.toml")
+    config_path.write_text("""
+[defaults]
+commit_template = "update {date}"
+
+[[repos]]
+name = "nvim"
+path = "~/Documents/Git/nvim"
+remotes = ["gitee", "github"]
+""")
+
+    with patch("sys.argv", ["gpa", "push", "nvim", "-m", "fix: 手写信息", "-c", str(config_path)]), \
+         patch("gitpush.cli.run_single") as mock_run:
+        main()
+        mock_run.assert_called_once()
+        assert mock_run.call_args.kwargs["message"] == "fix: 手写信息"
+
+
+def test_cli_message_alone_pushes_all(capsys) -> None:
+    """测试只给 -m 不给 action 时，等同 gpa -a -m（推送全部仓库）。"""
+    from gitpush.cli import main
+
+    config_path = Path("/tmp/config.toml")
+    config_path.write_text("""
+[defaults]
+commit_template = "update {date}"
+
+[[repos]]
+name = "nvim"
+path = "~/Documents/Git/nvim"
+remotes = ["gitee", "github"]
+""")
+
+    with patch("sys.argv", ["gpa", "-m", "chore: 全量同步"]), \
+         patch("gitpush.cli.load_config_path", return_value=str(config_path)), \
+         patch("gitpush.cli.run_all") as mock_all:
+        main()
+        mock_all.assert_called_once()
+        assert mock_all.call_args.kwargs["message"] == "chore: 全量同步"
+
+
+def test_cli_dry_run_with_message(capsys) -> None:
+    """测试 --dry-run 预览时显示本次提交信息。"""
+    from gitpush.cli import main
+
+    config_path = Path("/tmp/config.toml")
+    config_path.write_text("""
+[defaults]
+commit_template = "update {date}"
+
+[[repos]]
+name = "nvim"
+path = "~/Documents/Git/nvim"
+remotes = ["gitee", "github"]
+""")
+
+    with patch("sys.argv", ["gpa", "-a", "--dry-run", "-m", "fix: 预览", "-c", str(config_path)]), \
+         patch("gitpush.cli.run_all") as mock_all:
+        main()
+        mock_all.assert_not_called()
+
+    captured = capsys.readouterr()
+    assert "提交信息: fix: 预览" in captured.out

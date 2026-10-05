@@ -65,3 +65,21 @@ def test_run_single_repo_returns_errors(repo_config: tuple[RepoConfig, Path]) ->
 
         # 验证返回值包含出错的仓库名
         assert "test-repo" in result
+
+
+def test_run_single_passes_message(repo_config: tuple[RepoConfig, Path]) -> None:
+    """测试 run_single 把 -m 提交信息透传给 _process_repo。"""
+    repo, config_path = repo_config
+
+    with patch("gitpush.orchestrator._process_repo") as mock_process:
+        mock_result = MagicMock()
+        mock_result.status = "ok"
+        mock_result.repo_name = "test-repo"
+        mock_result.sync_result = None
+        mock_result.git_result = None
+        mock_result.error_details = []
+        mock_process.return_value = mock_result
+
+        run_single(repo, config_path, message="fix: 手写信息")
+
+        assert mock_process.call_args[0][2] == "fix: 手写信息"

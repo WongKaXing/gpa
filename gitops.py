@@ -44,7 +44,12 @@ def _has_unpushed_commits(repo_path: Path) -> bool:
 
 
 def _fill_template(template: str) -> str:
-    return template.format(date=date.today().isoformat())
+    """把 {date} 占位符替换为当天日期。
+
+    用 replace 而非 str.format，避免提交信息里出现其它花括号
+    （如 "fix {config}"）时抛 KeyError。
+    """
+    return template.replace("{date}", date.today().isoformat())
 
 
 def ensure_git_repo(
@@ -108,6 +113,7 @@ def git_sync(
     repo_path: str | Path,
     remotes: list[str],
     commit_template: str,
+    message: str | None = None,
 ) -> GitResult:
     """Stage all changes, commit if any, then push to each remote.
 
@@ -115,6 +121,8 @@ def git_sync(
         repo_path: Path to the Git repository.
         remotes: List of remote names to push to.
         commit_template: Template string with {date} placeholder.
+        message: One-off commit message (CLI -m); when given it overrides
+            commit_template. {date} inside it is still expanded.
 
     Returns:
         GitResult with commit/push status.
@@ -129,7 +137,8 @@ def git_sync(
     _run(["git", "add", "-A"], cwd=repo)
 
     if _has_staged_changes(repo):
-        msg = _fill_template(commit_template)
+        template = message if message and message.strip() else commit_template
+        msg = _fill_template(template)
         _run(["git", "commit", "-m", msg], cwd=repo)
         result.committed = True
         result.commit_message = msg

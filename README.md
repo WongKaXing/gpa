@@ -26,6 +26,8 @@ gpa -a      # 直接推送所有仓库（自动使用已保存的配置文件）
 gpa -c ~/.gitpush.toml   # 指定配置文件直接执行推送
 gpa list    # 列出所有已配置的仓库
 gpa push nvim   # 推送指定仓库（支持自定义仓库名或序号，如 gpa push 1）
+gpa push nvim -m "fix: 修复 xxx"   # 推送指定仓库并指定本次提交信息
+gpa -a -m "chore: 全量同步"        # 推送全部仓库并指定本次提交信息
 ```
 
 配置文件路径会被系统自动记住（存储在 `~/.config/gitpush/state.json`），日常使用直接 `gpa -a` 即可一键推送全部仓库，无需再指定配置文件；`-c` 仅在需要临时切换配置文件时使用。
@@ -38,7 +40,7 @@ gpa push nvim   # 推送指定仓库（支持自定义仓库名或序号，如 g
 
 ```toml
 [defaults]
-commit_template = "update {date}"     # 提交信息模板 {date} 会被替换为当前日期
+commit_template = "update {date}"     # 提交信息模板 {date} 会被替换为当前日期（可用 -m 临时覆盖）
 exclude = [".DS_Store", "__pycache__", "*.pyc"]  # 全局排除规则
 
 [[repos]]
@@ -132,6 +134,7 @@ CLI 模式支持 `q` 键快速导航：
 | `gpa -a` | 直接推送所有仓库（自动使用已保存的配置） |
 | `gpa list` | 列出所有已配置的仓库 |
 | `gpa push <名称或序号>` | 推送指定仓库（自定义仓库名，或排序后的序号如 `gpa push 1`） |
+| `gpa -m, --message <信息>` | 指定本次提交信息，覆盖配置里的 `commit_template`（`{date}` 仍会替换）；单独使用时等同 `gpa -a -m` |
 | `gpa -c <路径>` | 指定配置文件直接推送 |
 | `gpa -v, --version` | 显示版本信息 |
 | `gpa --dry-run` | 预览模式，仅显示将要执行的操作 |
@@ -141,7 +144,7 @@ CLI 模式支持 `q` 键快速导航：
 ## 工作流程
 
 1. **文件同步** — 将配置文件中指定的源文件/目录复制到对应 Git 仓库
-2. **Git 提交** — 按提交模板自动 `git add -A` 并 `git commit`
+2. **Git 提交** — 按提交模板自动 `git add -A` 并 `git commit`（`-m` 可临时指定本次提交信息，优先级：`-m` > 仓库 `commit_template` > `[defaults] commit_template`）
 3. **推送远程** — 依次 `git push` 到配置的所有远程仓库
 
 ## 状态持久化

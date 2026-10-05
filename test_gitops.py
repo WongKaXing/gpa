@@ -202,3 +202,57 @@ def test_ensure_git_repo_missing_url_hint(tmp_path):
 
     assert (repo_dir / ".git").exists()
     assert any("未配置 URL" in m for m in msgs)
+
+
+def test_message_overrides_template(tmp_path):
+    """-m 传入的提交信息应覆盖 commit_template。"""
+    repo = tmp_path / "local"
+    repo.mkdir()
+    _init_repo(repo)
+    (repo / "new.txt").write_text("changed")
+
+    result = git_sync(repo, remotes=[], commit_template="update {date}", message="fix: 手写信息")
+
+    assert result.committed is True
+    assert result.commit_message == "fix: 手写信息"
+    log = subprocess.run(
+        ["git", "log", "-1", "--pretty=%s"], cwd=repo, capture_output=True, text=True
+    ).stdout.strip()
+    assert log == "fix: 手写信息"
+
+
+def test_message_supports_date_placeholder(tmp_path):
+    """-m 里的 {date} 仍会被替换为当天日期。"""
+    repo = tmp_path / "local"
+    repo.mkdir()
+    _init_repo(repo)
+    (repo / "new.txt").write_text("changed")
+
+    result = git_sync(repo, remotes=[], commit_template="update {date}", message="chore: 备份 {date}")
+
+    assert result.commit_message == f"chore: 备份 {date.today().isoformat()}"
+
+
+def test_blank_message_falls_back_to_template(tmp_path):
+    """-m 传空白字符串时回退到 commit_template，不产生空提交信息。"""
+    repo = tmp_path / "local"
+    repo.mkdir()
+    _init_repo(repo)
+    (repo / "new.txt").write_text("changed")
+
+    result = git_sync(repo, remotes=[], commit_template="update {date}", message="   ")
+
+    assert result.commit_message == f"update {date.today().isoformat()}"
+
+
+def test_message_keeps_unknown_braces(tmp_path):
+    """提交信息里的其它花括号应原样保留，不触发 KeyError。"""
+    repo = tmp_path / "local"
+    repo.mkdir()
+    _init_repo(repo)
+    (repo / "new.txt").write_text("changed")
+
+    result = git_sync(repo, remotes=[], commit_template="update {date}", message="fix: 处理 {config} 解析")
+
+    assert result.committed is True
+    assert result.commit_message == "fix: 处理 {config} 解析"

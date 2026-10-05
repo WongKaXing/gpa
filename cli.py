@@ -110,6 +110,7 @@ def _print_banner() -> None:
     print("    gpa -a           直接推送所有仓库（自动使用已保存的配置）")
     print("    gpa -c <路径>    指定配置文件直接执行推送")
     print("    gpa push <名称/序号>  推送指定仓库")
+    print("    gpa push <名称> -m <信息>  推送指定仓库并指定本次提交信息")
     print()
     print("  配置文件:")
     print(f"    默认位置: ~/.gitpush.toml")
@@ -118,6 +119,7 @@ def _print_banner() -> None:
     print(f"    可直接编辑 TOML 文件来修改仓库配置")
     print()
     print("  可选参数:")
+    print("    -m, --message    指定本次提交信息（覆盖 commit_template，支持 {date}）")
     print("    -v, --version    显示版本信息")
     print("    --dry-run        仅预览，不实际执行")
     print("    --verbose        详细输出每个仓库的处理过程")
@@ -211,6 +213,7 @@ def _push_single_repo(
     config: Config,
     config_path: Path,
     repo_name: str | None = None,
+    message: str | None = None,
 ) -> bool:
     """推送单个仓库。
 
@@ -218,6 +221,7 @@ def _push_single_repo(
         config: 解析后的配置对象。
         config_path: 配置文件路径。
         repo_name: 仓库名称（可选）。如果为 None，显示交互式选择。
+        message: 本次提交信息（CLI -m），为空则用 commit_template。
 
     Returns:
         是否成功推送。
@@ -232,7 +236,7 @@ def _push_single_repo(
         if not target:
             print(f"未找到仓库 '{repo_name}'，运行 `gpa list` 查看可用仓库")
             return False
-        run_single(target, config_path)
+        run_single(target, config_path, message=message)
         return True
 
     # 交互模式：显示列表选择（按设置排序，不显示路径）
@@ -256,7 +260,7 @@ def _push_single_repo(
     if target is None:
         print("  无效选择。")
         return False
-    run_single(target, config_path)
+    run_single(target, config_path, message=message)
     return True
 
 
@@ -437,6 +441,12 @@ def _main() -> None:
         help="直接推送所有仓库（自动使用已保存的配置文件）",
     )
     parser.add_argument(
+        "-m", "--message",
+        default=None,
+        help='本次提交信息（覆盖配置的 commit_template，支持 {date} 占位符）；'
+             '单独使用 -m 时等同 "gpa -a -m"',
+    )
+    parser.add_argument(
         "action",
         nargs="?",
         default=None,
@@ -476,6 +486,7 @@ def _main() -> None:
         args.action in ("init", "list", "push")
         or args.config is not None
         or args.all
+        or args.message is not None
     )
 
     # ── 有明确命令 → 清屏后执行 ──
@@ -507,13 +518,13 @@ def _main() -> None:
         if result is None:
             return
         config_path, config = result
-        if not _push_single_repo(config, config_path, args.repo_name):
+        if not _push_single_repo(config, config_path, args.repo_name, message=args.message):
             sys.exit(1)
         return
 
-    # 显式 -a（推送全部）或 -c（指定配置）→ 直接执行推送，跳过交互菜单
+    # 显式 -a（推送全部）或 -c（指定配置）或 -m（指定提交信息）→ 直接执行推送，跳过交互菜单
     # 配置文件路径由系统自动记忆（state 文件/默认路径），-c 仅作为覆盖手段
-    if args.all or args.config:
+    if args.all or args.config or args.message is not None:
         result = _resolve_config(args.config)
         if result is None:
             sys.exit(1)
@@ -527,9 +538,17 @@ def _main() -> None:
                     print(f"    同步目录: {repo.sync_dir}")
                 for f in repo.files:
                     print(f"    复制: {f.source} → {f.dest}")
+            if args.message:
+                print(f"  提交信息: {args.message}")
             return
 
-        run_all(config, config_path, verbose=args.verbose, sort_order=_SETTINGS.sort_order)
+        run_all(
+            config,
+            config_path,
+            verbose=args.verbose,
+            sort_order=_SETTINGS.sort_order,
+            message=args.message,
+        )
         return
 
     # ── 无参数 → 按设置决定是否打印用法说明，然后检测配置 ──

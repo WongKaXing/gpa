@@ -16,8 +16,16 @@ _STATUS_SYMBOLS = {"ok": "✓", "no_changes": "○", "error": "✗"}
 _STATUS_COLORS = {"ok": "32", "no_changes": "33", "error": "31"}
 
 
-def _process_repo(repo: RepoConfig, config_dir: Path) -> RepoResult:
-    """对单个仓库执行同步 + git 操作，处理过程中实时输出进度。"""
+def _process_repo(
+    repo: RepoConfig,
+    config_dir: Path,
+    message: str | None = None,
+) -> RepoResult:
+    """对单个仓库执行同步 + git 操作，处理过程中实时输出进度。
+
+    Args:
+        message: 本次提交信息（CLI -m），为空则用仓库/全局 commit_template。
+    """
     result = RepoResult(repo_name=repo.name, status="ok")
 
     print(f"\n{color('── ' + repo.name + ' ──', '1')}")
@@ -55,11 +63,14 @@ def _process_repo(repo: RepoConfig, config_dir: Path) -> RepoResult:
             repo_path=repo.path,
             remotes=repo.remotes,
             commit_template=repo.commit_template or "update {date}",
+            message=message,
         )
         result.git_result = git_result
 
         if git_result.committed:
             print(f"  {color('已提交', '32')}: {git_result.commit_message}")
+        elif message and message.strip() and not git_result.push_fail:
+            print(f"  {color('无新改动，未使用 -m 提交信息', '33')}")
 
         # 推送进度
         for remote in git_result.push_ok:
@@ -99,10 +110,12 @@ def run_all(
     config_path: str | Path,
     verbose: bool = False,
     sort_order: str = "asc",
+    message: str | None = None,
 ) -> None:
     """运行配置中的所有仓库，打印进度和汇总，处理重试。
 
     仓库处理顺序遵循设置的 sort_order（asc/desc/config）。
+    message 非空时作为本次所有仓库的提交信息（覆盖 commit_template）。
     """
     config_dir = Path(config_path).resolve().parent
     results: list[RepoResult] = []
@@ -111,7 +124,7 @@ def run_all(
 
     repos = order_repos(config.repos, sort_order)
     for repo in repos:
-        r = _process_repo(repo, config_dir)
+        r = _process_repo(repo, config_dir, message)
         results.append(r)
 
     errored = print_summary(results)
@@ -122,7 +135,7 @@ def run_all(
         for repo in repos:
             if repo.name not in errored:
                 continue
-            r = _process_repo(repo, config_dir)
+            r = _process_repo(repo, config_dir, message)
             for i, old in enumerate(results):
                 if old.repo_name == repo.name:
                     results[i] = r
@@ -131,16 +144,21 @@ def run_all(
         errored = print_summary(results)
 
 
-def run_single(repo: RepoConfig, config_path: str | Path) -> list[str]:
+def run_single(
+    repo: RepoConfig,
+    config_path: str | Path,
+    message: str | None = None,
+) -> list[str]:
     """运行单个仓库的同步和推送。
 
     Args:
         repo: 要推送的仓库配置。
         config_path: 配置文件路径（用于确定配置目录）。
+        message: 本次提交信息（CLI -m），为空则用 commit_template。
 
     Returns:
         出错的仓库名列表（空列表表示成功）。
     """
     config_dir = Path(config_path).resolve().parent
-    result = _process_repo(repo, config_dir)
+    result = _process_repo(repo, config_dir, message)
     return print_summary([result])
